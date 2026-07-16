@@ -58,7 +58,10 @@ outcome. It does **not** know the expected result — the orchestrator judges.
 ```
 
 - `--creds` — a valiss creds file (token(s) + optional seed) from the fixture.
-- `--nonce` — replay nonce to attach (omit for none).
+- `--nonce` — replay nonce to attach. A signing client always sends a nonce:
+  the given value when the flag is set (so replay scenarios can repeat it), a
+  fresh random one otherwise — servers run with a replay cache and reject
+  nonce-less signed requests as `nonce_required`. Bearer requests carry none.
 - `--audience`/`--payload` — message-mode bindings.
 
 The client performs the call and prints one JSON line to stdout:
