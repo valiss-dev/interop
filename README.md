@@ -19,13 +19,16 @@ prove the wire *bytes* agree). This proves the *transports* integrate.
   `harness/README.md`). Entries are frozen per minor version — and adapter
   entries per framework major — so the grid also tests **cross-version**
   conformance.
-- **`orchestrator/`** — the matrix runner (containers + compose); derives the
-  grid from the manifests.
+- **`orchestrator/`** — the matrix runner; derives the grid from the
+  manifests and executes it (see `orchestrator/README.md`).
 
 ## Status
 
-Foundation. The contract, entry/manifest scheme, and scenarios are defined,
-with `harness/go-0.12/` as the seed entry. Next: generate the fixture from
-`valiss-go`, build the go-0.12 harness runnables, then the orchestrator.
-Python joins as a client (and message verifier) with the spec-1 port, and as a
-signed-request server once it ships the request verifier (allowlist + replay).
+Operational. The contract, entry/manifest scheme, scenarios, fixture, the
+`harness/go-0.12/` reference entry, and the orchestrator are in place. The
+matrix runs locally with `go -C orchestrator run .` (process runner by
+default; `--runner docker|podman|apple` for the container mode) and in CI
+(`.github/workflows/matrix.yaml`, docker runner) on pushes to `main` and PRs.
+Next: Python joins as a client (and message verifier) with the spec-1 port,
+and as a signed-request server once it ships the request verifier
+(allowlist + replay).
