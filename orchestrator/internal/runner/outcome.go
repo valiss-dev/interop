@@ -14,6 +14,10 @@ type Outcome struct {
 	Status   any       `json:"status"`
 	Reason   *string   `json:"reason"`
 	Identity *Identity `json:"identity"`
+
+	// ChainRequired reports whether the final response carried the
+	// message-mode chain-negotiation signal; absent means false.
+	ChainRequired bool `json:"chain_required"`
 }
 
 // Identity is the accepted identity as reported by the client.

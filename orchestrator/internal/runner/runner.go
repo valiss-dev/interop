@@ -34,13 +34,16 @@ type Paths struct {
 // fixture file name and payload by repo-root-relative path, so each runner
 // resolves them for its own filesystem view.
 type ClientCall struct {
-	Transport string
-	Addr      string
-	Mode      string
-	Creds     string
-	Nonce     string
-	Audience  string
-	Payload   string
+	Transport     string
+	Addr          string
+	Mode          string
+	Creds         string
+	Nonce         string
+	Audience      string
+	Payload       string
+	TTL           string
+	TamperPayload string
+	Chain         string
 }
 
 // Runner executes entry runnables.

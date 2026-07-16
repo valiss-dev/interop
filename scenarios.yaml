@@ -63,3 +63,51 @@ scenarios:
     audience: interop://other
     payload: fixture/payloads/hello.bin
     expect: { accept: false, reason: wrong_audience }
+
+  - id: message/revoked-chain
+    mode: message
+    creds: revoked.creds       # valid chain, account not in allowlist
+    audience: interop://sink
+    payload: fixture/payloads/hello.bin
+    requires: [allowlist]
+    expect: { accept: false, reason: not_allowlisted }
+
+  - id: message/checksum-mismatch
+    mode: message
+    creds: user.creds
+    audience: interop://sink
+    payload: fixture/payloads/hello.bin          # checksummed at mint
+    tamper_payload: fixture/payloads/tampered.bin # bytes actually sent
+    expect: { accept: false, reason: checksum_mismatch }
+
+  - id: message/expired
+    mode: message
+    creds: user.creds
+    audience: interop://sink
+    payload: fixture/payloads/hello.bin
+    ttl: -5m                   # already expired, outside the 2m skew
+    expect: { accept: false, reason: expired }
+
+  - id: message/detached-chain
+    mode: message
+    creds: user.creds
+    audience: interop://sink
+    payload: fixture/payloads/hello.bin
+    chain: detached            # chain in the detached headers, not the token
+    expect: { accept: true, tenant: acme, user: alice }
+
+  - id: message/bare-signals-negotiation
+    mode: message
+    creds: user.creds
+    audience: interop://sink
+    payload: fixture/payloads/hello.bin
+    chain: none                # bare token; server must signal chain-required
+    expect: { accept: false, reason: no_chain, chain_required: true }
+
+  - id: message/chain-negotiation
+    mode: message
+    creds: user.creds
+    audience: interop://sink
+    payload: fixture/payloads/hello.bin
+    chain: negotiate           # bare first, retransmit detached on the signal
+    expect: { accept: true, tenant: acme, user: alice }

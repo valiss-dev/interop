@@ -19,6 +19,15 @@ type Scenario struct {
 	Repeat   int      `yaml:"repeat"`
 	Requires []string `yaml:"requires"`
 
+	// Message-mode extras (CONTRACT.md client flags). TTL is a Go-syntax
+	// duration for the minted message token; negative mints one already
+	// expired. TamperPayload names the bytes actually sent when they must
+	// differ from the checksummed Payload. Chain picks the chain delivery:
+	// embedded (default), detached, none, or negotiate.
+	TTL           string `yaml:"ttl"`
+	TamperPayload string `yaml:"tamper_payload"` // repo-root-relative, like payload
+	Chain         string `yaml:"chain"`
+
 	// Transport pins the scenario to one transport; empty runs it on all.
 	Transport string `yaml:"transport"`
 
@@ -29,13 +38,17 @@ type Scenario struct {
 	ExpectLast *Expect `yaml:"expect_last"`
 }
 
-// Expect is the judged outcome. Tenant and User are pointers so that an
-// absent field asserts nothing while an explicit value must match.
+// Expect is the judged outcome. Pointer fields assert nothing when absent
+// and must match exactly when set.
 type Expect struct {
 	Accept bool    `yaml:"accept"`
 	Tenant *string `yaml:"tenant"`
 	User   *string `yaml:"user"`
 	Reason string  `yaml:"reason"`
+
+	// ChainRequired asserts whether the final response carried the
+	// chain-negotiation signal (message mode).
+	ChainRequired *bool `yaml:"chain_required"`
 }
 
 // Want returns the expectation for the scenario's final attempt.
@@ -105,6 +118,8 @@ func (s *Scenario) validate() error {
 		return fmt.Errorf("repeat > 1 requires expect_last")
 	case s.Repeat <= 1 && s.ExpectLast != nil:
 		return fmt.Errorf("expect_last requires repeat > 1")
+	case !slices.Contains([]string{"", "embedded", "detached", "none", "negotiate"}, s.Chain):
+		return fmt.Errorf("unknown chain %q", s.Chain)
 	}
 	if want := s.Want(); !want.Accept && want.Reason == "" {
 		return fmt.Errorf("reject expectation missing reason")

@@ -34,7 +34,13 @@ Invocation (flags, not positional):
   the server verifies the token chain to the pinned operator, the account
   against the allowlist, the request signature, epoch, and validity windows.
 - `--mode message` — the message-token transports (per-message proof): the
-  server verifies an embedded/attached message token (audience, checksum).
+  server verifies an embedded/attached message token (audience, checksum, and
+  the chain account against the allowlist). The chain arrives either embedded
+  in the token or in the detached request headers
+  `valiss-chain-account-token` / `valiss-chain-user-token`. A token with no
+  chain at all is rejected `no_chain` **and** the response carries the
+  chain-negotiation signal `valiss-chain: required` (response header on HTTP,
+  trailer on gRPC), inviting a retransmit with the detached headers.
 
 Behavior of the protected operation:
 
@@ -54,7 +60,8 @@ outcome. It does **not** know the expected result — the orchestrator judges.
 ```
 <impl>-client --transport {http|grpc} --addr HOST:PORT \
               --creds PATH_TO_CREDS [--nonce NONCE] [--mode {signed|message}] \
-              [--audience AUD] [--payload PATH]
+              [--audience AUD] [--payload PATH] [--tamper-payload PATH] \
+              [--ttl DURATION] [--chain {embedded|detached|none|negotiate}]
 ```
 
 - `--creds` — a valiss creds file (token(s) + optional seed) from the fixture.
@@ -62,12 +69,23 @@ outcome. It does **not** know the expected result — the orchestrator judges.
   the given value when the flag is set (so replay scenarios can repeat it), a
   fresh random one otherwise — servers run with a replay cache and reject
   nonce-less signed requests as `nonce_required`. Bearer requests carry none.
-- `--audience`/`--payload` — message-mode bindings.
+- `--audience`/`--payload` — message-mode bindings: the minted token's
+  audience and the payload whose checksum it carries.
+- `--tamper-payload` — message mode: send these bytes instead of the
+  checksummed `--payload` ones (the mint still checksums `--payload`).
+- `--ttl` — message-token lifetime, Go duration syntax (default `30s`); a
+  negative value mints an already-expired token.
+- `--chain` — message-mode chain delivery: `embedded` (default, inside the
+  token), `detached` (bare token + the detached chain headers), `none` (bare
+  token, no chain anywhere), or `negotiate` (send bare; if the response
+  carries the `valiss-chain: required` signal, retransmit once with the
+  detached headers and report that final outcome).
 
 The client performs the call and prints one JSON line to stdout:
-`{"status": <int|grpc-code-string>, "reason": "<code|null>", "identity": {...}|null}`,
+`{"status": <int|grpc-code-string>, "reason": "<code|null>", "identity": {...}|null, "chain_required": <bool>}`,
 then exits 0 regardless of the server's answer (a rejected request is not a
-client error).
+client error). `chain_required` reports whether the **final** response carried
+the chain-negotiation signal; it may be omitted when false.
 
 ## Fixture
 
@@ -79,6 +97,9 @@ fixture/
 ├── gen/                 Go generator (regenerates the below; output is committed)
 ├── operator.pub         pinned operator public key
 ├── allowlist.txt        accepted account-token ids
+├── payloads/
+│   ├── hello.bin         message-mode payload bytes
+│   └── tampered.bin      different bytes, for checksum-mismatch scenarios
 └── creds/
     ├── account.creds     valid account-level creds (in allowlist)
     ├── user.creds        valid user-level creds

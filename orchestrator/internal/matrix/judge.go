@@ -50,6 +50,9 @@ func judgeWarmup(transport string, out runner.Outcome) error {
 // expectation. Tenant and user are asserted only when the expectation names
 // them; a reject must carry the exact §7 reason and no identity.
 func judgeFinal(transport string, want *suite.Expect, out runner.Outcome) error {
+	if want.ChainRequired != nil && out.ChainRequired != *want.ChainRequired {
+		return fmt.Errorf("chain_required = %v, want %v", out.ChainRequired, *want.ChainRequired)
+	}
 	if want.Accept {
 		if !isAccept(transport, out.Status) {
 			return fmt.Errorf("expected accept, got %s", fmtOutcome(out))

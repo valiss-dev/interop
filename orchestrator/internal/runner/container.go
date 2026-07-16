@@ -54,13 +54,36 @@ func clientCmd(e *suite.Entry, call ClientCall) ([]string, error) {
 		args = append(args, "--audience", call.Audience)
 	}
 	if call.Payload != "" {
-		rel, found := strings.CutPrefix(call.Payload, "fixture/")
-		if !found {
-			return nil, fmt.Errorf("payload %q is outside fixture/: container runners mount only the fixture", call.Payload)
+		p, err := fixturePath(call.Payload)
+		if err != nil {
+			return nil, err
 		}
-		args = append(args, "--payload", fixtureMount+"/"+rel)
+		args = append(args, "--payload", p)
+	}
+	if call.TamperPayload != "" {
+		p, err := fixturePath(call.TamperPayload)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, "--tamper-payload", p)
+	}
+	if call.TTL != "" {
+		args = append(args, "--ttl", call.TTL)
+	}
+	if call.Chain != "" {
+		args = append(args, "--chain", call.Chain)
 	}
 	return args, nil
+}
+
+// fixturePath maps a repo-root-relative fixture path to its in-container
+// mount; container runners mount only the fixture.
+func fixturePath(p string) (string, error) {
+	rel, found := strings.CutPrefix(p, "fixture/")
+	if !found {
+		return "", fmt.Errorf("payload %q is outside fixture/: container runners mount only the fixture", p)
+	}
+	return fixtureMount + "/" + rel, nil
 }
 
 // runCmd executes one CLI invocation, returning stdout and folding stderr

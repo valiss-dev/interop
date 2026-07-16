@@ -179,13 +179,16 @@ func runCellModes(ctx context.Context, r runner.Runner, cell *suite.Cell, cr *Ce
 // (expect_last) judges attempt N.
 func runScenario(ctx context.Context, r runner.Runner, cell *suite.Cell, sc *suite.Scenario, addr string) ScenarioResult {
 	call := runner.ClientCall{
-		Transport: cell.Transport,
-		Addr:      addr,
-		Mode:      sc.Mode,
-		Creds:     sc.Creds,
-		Nonce:     sc.Nonce,
-		Audience:  sc.Audience,
-		Payload:   sc.Payload,
+		Transport:     cell.Transport,
+		Addr:          addr,
+		Mode:          sc.Mode,
+		Creds:         sc.Creds,
+		Nonce:         sc.Nonce,
+		Audience:      sc.Audience,
+		Payload:       sc.Payload,
+		TTL:           sc.TTL,
+		TamperPayload: sc.TamperPayload,
+		Chain:         sc.Chain,
 	}
 	n := sc.Attempts()
 	for i := 1; i <= n; i++ {
