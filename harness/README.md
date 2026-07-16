@@ -1,10 +1,12 @@
-# impl
+# harness
 
-Flat list of **frozen implementation entries**. One directory per
+Flat list of **frozen implementation entries** — each a thin server/client
+harness wrapping a pinned implementation version (the implementations
+themselves live in their own repos). One directory per
 `(library, minor version[, adapter])`:
 
 ```
-impl/
+harness/
 ├── go-0.12/             core Go harness, 0.12.x series
 ├── go-0.13rc1/          release candidates are entries too
 ├── py-0.8/              core Python harness (joins with the spec-1 port)

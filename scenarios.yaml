@@ -1,7 +1,7 @@
 # Language-neutral interop scenario suite (ADR 0010). Each scenario names
 # fixture creds, the request shape, and the expected outcome. The orchestrator
 # runs every scenario in every (server entry × client entry × transport) cell
-# derived from the impl/ manifests, unless `transport` pins one.
+# derived from the harness/ manifests, unless `transport` pins one.
 # Reason codes are the spec/SPEC-1.md §7 taxonomy.
 #
 # `requires` lists server capabilities (manifest server.features) the scenario

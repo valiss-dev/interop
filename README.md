@@ -13,16 +13,18 @@ prove the wire *bytes* agree). This proves the *transports* integrate.
 - **`scenarios.yaml`** — the language-neutral scenario suite.
 - **`fixture/`** — frozen keys, allowlist, and creds, generated from the Go
   reference.
-- **`impl/<library>-<minor>[-<adapter>]/`** — frozen implementation entries,
-  each with a capability manifest (see `impl/README.md`). Entries are frozen
-  per minor version, so the grid also tests **cross-version** conformance.
+- **`harness/<library>-<minor>[-<adapter>]/`** — frozen implementation
+  entries, each a thin server/client harness wrapping a pinned implementation
+  version, with a capability manifest (see `harness/README.md`). Entries are
+  frozen per minor version, so the grid also tests **cross-version**
+  conformance.
 - **`orchestrator/`** — the matrix runner (containers + compose); derives the
   grid from the manifests.
 
 ## Status
 
 Foundation. The contract, entry/manifest scheme, and scenarios are defined,
-with `impl/go-0.12/` as the seed entry. Next: generate the fixture from
+with `harness/go-0.12/` as the seed entry. Next: generate the fixture from
 `valiss-go`, build the go-0.12 harness runnables, then the orchestrator.
 Python joins as a client (and message verifier) with the spec-1 port, and as a
 signed-request server once it ships the request verifier (allowlist + replay).

@@ -6,8 +6,8 @@ valiss **client** written in language B exactly as the reference does, over
 each transport. Where the static vectors (in `valiss-dev/spec`) prove the wire
 bytes agree, this proves the transports integrate.
 
-Every **implementation entry** (`impl/<library>-<minor>[-<adapter>]`, see
-`impl/README.md`) supplies the runnables it declares in its manifest. The
+Every **implementation entry** (`harness/<library>-<minor>[-<adapter>]`, see
+`harness/README.md`) supplies the runnables it declares in its manifest. The
 orchestrator derives the grid from manifests: for each transport, every entry
 declaring a server pairs with every entry declaring a client — across
 libraries, adapters, and frozen minor versions alike.
@@ -145,7 +145,7 @@ interop/
 ├── CONTRACT.md          this file
 ├── scenarios.yaml       language-neutral scenario suite
 ├── fixture/             frozen keys, allowlist, creds (+ Go generator)
-├── impl/                frozen implementation entries (see impl/README.md)
+├── harness/             frozen implementation entries (see harness/README.md)
 │   └── go-0.12/         reference entry: manifest + server + client
 ├── orchestrator/        the matrix runner + container compose
 └── .github/workflows/   CI running the matrix
