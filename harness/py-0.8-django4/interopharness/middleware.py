@@ -1,10 +1,11 @@
-"""Contract glue around the shipped valiss-py Django middleware (CONTRACT.md).
+"""The entry's middleware: the shipped valiss-py Django middleware bindings
+(the enforcement path this entry exists to exercise, bound at the bottom of
+this module) plus the contract glue around them (CONTRACT.md).
 
-Enforcement is the shipped middleware bound in :mod:`.valiss`
-(``valiss.httpauth.django`` in signed mode, ``valiss.httpsig.django`` in
-message mode); this module layers only what the interop contract demands and
-the shipped classes do not produce, mirroring the gin entry's adapter/glue
-split. Per item:
+Enforcement is ``valiss.httpauth.django`` in signed mode and
+``valiss.httpsig.django`` in message mode; the glue layers only what the
+interop contract demands and the shipped classes do not produce, mirroring
+the gin entry's adapter/glue split. Per item:
 
 - ``contract_responses`` (bypass — the adapter cannot express it): the
   shipped middleware renders every rejection as a plain-text body built from
@@ -29,7 +30,12 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 
+from django.conf import settings
 from django.http import HttpRequest, HttpResponse
+
+from valiss import MemoryReplayCache, StaticAllowlist, Verifier
+from valiss.httpauth import django as httpauth_django
+from valiss.httpsig import django as httpsig_django
 
 from . import reason, wire
 
@@ -71,3 +77,36 @@ def sink_audience(get_response: GetResponse) -> GetResponse:
         return get_response(request)
 
     return process
+
+# --- Shipped valiss middleware bindings -------------------------------------
+# The enforcement path this entry exists to exercise: each shipped factory
+# (``valiss.httpauth.django.middleware``, ``valiss.httpsig.django.middleware``)
+# returns a closure over verification state, built once here and referenced
+# from ``MIDDLEWARE`` by dotted path. Signed mode: pinned operator key,
+# file-backed allowlist (revocation), in-memory replay cache (nonce
+# mandatory), bearer accepted, and the adapter's own allow_missing_extension
+# relaxation (fixture tokens carry no http extension). Message mode: the
+# shipped receiver, which natively answers chainless tokens with the
+# ``valiss-chain: required`` signal; no chain_cache, or a bare token would
+# reuse a previously negotiated chain and break bare-signals-negotiation.
+# Chain revocation is the receiver's job by design, so the view performs the
+# allowlist check on the chain account, reading ``allowlist`` from here.
+
+
+def _operator_pub() -> str:
+    with open(settings.VALISS["OPERATOR_PUB_FILE"], encoding="utf-8") as f:
+        return f.read().strip()
+
+
+_operator_pub_key = _operator_pub()
+
+# The revocation state both modes enforce: the signed Verifier holds it
+# internally; message mode reads it from the view.
+allowlist = StaticAllowlist.from_file(settings.VALISS["ALLOWLIST_FILE"])
+
+valiss_signed = httpauth_django.middleware(
+    Verifier(_operator_pub_key, allowlist, replay_cache=MemoryReplayCache()),
+    allow_missing_extension=True,
+)
+
+valiss_message = httpsig_django.middleware(_operator_pub_key)

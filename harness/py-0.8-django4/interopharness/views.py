@@ -21,7 +21,7 @@ from valiss import Reason
 from valiss.httpauth.django import identity
 from valiss.httpsig.django import message_claims
 
-from . import auth, wire
+from . import middleware, wire
 
 
 @require_POST
@@ -33,7 +33,7 @@ def invoke(request: HttpRequest) -> JsonResponse:
     claims = message_claims(request)
     if claims is not None:
         assert claims.account is not None and claims.user is not None  # chain-verified
-        if claims.account.id not in auth.allowlist:
+        if claims.account.id not in middleware.allowlist:
             # A Reason member is its wire string (StrEnum), so the code rides
             # straight from the library's taxonomy into the reject JSON.
             return JsonResponse(wire.reject(Reason.NOT_ALLOWLISTED), status=401)
