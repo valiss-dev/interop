@@ -1,0 +1,20 @@
+id: go-0.13
+library: valiss-go
+version: "0.13"
+spec: [1]
+
+server:
+  transports: [http, grpc]
+  modes: [signed, message]
+  features:
+    allowlist: true
+    replay: true
+    epoch: true
+    bearer: true
+client:
+  transports: [http, grpc]
+  modes: [signed, message]
+
+issue: [operator, account, user, message]
+build:
+  dockerfile: Dockerfile
