@@ -6,7 +6,11 @@
 // carry a nonce) and bearer user tokens accepted. In message mode it
 // verifies a per-message proof of origin: audience pinned to the interop
 // sink, checksum bound to the received payload, and the chain's account
-// checked against the same allowlist.
+// checked against the same allowlist. The chain arrives embedded in the
+// token or detached in the valiss-chain-* request headers; a token with no
+// chain anywhere is rejected no_chain and the response carries the
+// chain-negotiation signal (valiss-chain: required — response header on
+// HTTP, trailer on gRPC), inviting a retransmit with the detached headers.
 //
 // Accept answers HTTP 200 / gRPC OK with the contract's accept JSON; reject
 // answers HTTP 401 / gRPC UNAUTHENTICATED with {"ok":false,"reason":<§7>}.
@@ -147,27 +151,36 @@ func (s *server) verifySigned(req valiss.Request) (accepted *wire.Accept, reject
 
 // verifyMessage verifies a per-message proof over the payload as received,
 // with the audience pinned to the interop sink and the chain's account held
-// to the same allowlist the signed mode enforces.
-func (s *server) verifyMessage(token string, payload []byte) (accepted *wire.Accept, rejected *wire.Reject) {
+// to the same allowlist the signed mode enforces. When the token embeds no
+// chain the detached valiss-chain-* request headers supply it. chainRequired
+// reports the one failure a retransmit with the chain can cure
+// (valiss.ErrNoChain): the transport then attaches the negotiation signal.
+func (s *server) verifyMessage(token, chainAccountToken, chainUserToken string, payload []byte) (accepted *wire.Accept, rejected *wire.Reject, chainRequired bool) {
 	if token == "" {
-		return nil, &wire.Reject{Reason: "missing"}
+		return nil, &wire.Reject{Reason: "missing"}, false
 	}
-	claims, err := valiss.VerifyMessage(token, s.operatorPub,
+	opts := []valiss.VerifyMessageOption{
 		valiss.ExpectAudience(wire.SinkAudience),
-		valiss.WithPayload(payload))
+		valiss.WithPayload(payload),
+	}
+	if chainAccountToken != "" || chainUserToken != "" {
+		opts = append(opts, valiss.WithChainTokens(chainAccountToken, chainUserToken))
+	}
+	claims, err := valiss.VerifyMessage(token, s.operatorPub, opts...)
 	if err != nil {
-		return nil, &wire.Reject{Reason: reason.Code(err)}
+		return nil, &wire.Reject{Reason: reason.Code(err)}, errors.Is(err, valiss.ErrNoChain)
 	}
 	if !s.allowlist.Allowed(claims.Account.ID) {
-		return nil, &wire.Reject{Reason: "not_allowlisted"}
+		return nil, &wire.Reject{Reason: "not_allowlisted"}, false
 	}
-	return &wire.Accept{OK: true, Tenant: claims.Account.Name, User: &claims.User.Name}, nil
+	return &wire.Accept{OK: true, Tenant: claims.Account.Name, User: &claims.User.Name}, nil, false
 }
 
 // handleHTTP is the protected operation over HTTP.
 func (s *server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	var accepted *wire.Accept
 	var rejected *wire.Reject
+	var chainRequired bool
 	switch s.mode {
 	case "signed":
 		nonce := r.Header.Get(valiss.HeaderNonce)
@@ -185,9 +198,16 @@ func (s *server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "reading request body", http.StatusBadRequest)
 			return
 		}
-		accepted, rejected = s.verifyMessage(r.Header.Get(valiss.HeaderMessageToken), body)
+		accepted, rejected, chainRequired = s.verifyMessage(
+			r.Header.Get(valiss.HeaderMessageToken),
+			r.Header.Get(valiss.HeaderChainAccountToken),
+			r.Header.Get(valiss.HeaderChainUserToken),
+			body)
 	}
 	if rejected != nil {
+		if chainRequired {
+			w.Header().Set(valiss.HeaderChain, valiss.ChainRequired)
+		}
 		writeJSON(w, http.StatusUnauthorized, rejected)
 		return
 	}
@@ -195,11 +215,13 @@ func (s *server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // Invoke is the protected operation over gRPC. Rejections travel as an
-// UNAUTHENTICATED status whose message is the contract's reject JSON.
+// UNAUTHENTICATED status whose message is the contract's reject JSON; the
+// chain-negotiation signal rides the trailing metadata.
 func (s *server) Invoke(ctx context.Context, req *interoppb.InvokeRequest) (*interoppb.InvokeResponse, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	var accepted *wire.Accept
 	var rejected *wire.Reject
+	var chainRequired bool
 	switch s.mode {
 	case "signed":
 		nonce := first(md, valiss.HeaderNonce)
@@ -212,9 +234,18 @@ func (s *server) Invoke(ctx context.Context, req *interoppb.InvokeRequest) (*int
 			Nonce:        nonce,
 		})
 	case "message":
-		accepted, rejected = s.verifyMessage(first(md, valiss.HeaderMessageToken), req.GetPayload())
+		accepted, rejected, chainRequired = s.verifyMessage(
+			first(md, valiss.HeaderMessageToken),
+			first(md, valiss.HeaderChainAccountToken),
+			first(md, valiss.HeaderChainUserToken),
+			req.GetPayload())
 	}
 	if rejected != nil {
+		if chainRequired {
+			if err := grpc.SetTrailer(ctx, metadata.Pairs(valiss.HeaderChain, valiss.ChainRequired)); err != nil {
+				return nil, status.Error(codes.Internal, "set chain trailer")
+			}
+		}
 		raw, err := json.Marshal(rejected)
 		if err != nil {
 			return nil, status.Error(codes.Internal, "encode reject")

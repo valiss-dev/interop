@@ -1,8 +1,8 @@
 // Command client is the go-0.13rc1 interop harness client (CONTRACT.md): it
 // makes exactly one authenticated request and reports the raw outcome as one
 // JSON line — {"status": <int|grpc-code-string>, "reason": <§7 code|null>,
-// "identity": {...}|null} — exiting 0 whether the server accepted or
-// rejected; only infrastructure failures exit nonzero.
+// "identity": {...}|null, "chain_required": <bool>} — exiting 0 whether the
+// server accepted or rejected; only infrastructure failures exit nonzero.
 //
 // In signed mode creds with a seed sign the request with it as given — even
 // a seed that does not match the token subject is used verbatim, since the
@@ -10,8 +10,16 @@
 // as bearer requests. Signing clients always attach a nonce: the --nonce
 // value when fixed by the scenario, a fresh random one otherwise, because a
 // replay-suppressing server (like this entry's) requires one on every signed
-// request. In message mode the client mints a message token over the
-// --payload bytes bound to --audience, with the creds' chain embedded.
+// request.
+//
+// In message mode the client mints a message token over the --payload bytes
+// bound to --audience with the --ttl lifetime (negative mints one already
+// expired), sending the --tamper-payload bytes instead when the scenario
+// wants the checksum to miss. --chain picks the chain delivery: embedded in
+// the token (default), detached in the valiss-chain-* request headers, none
+// at all, or negotiate — bare first, retransmitted once with the detached
+// headers when the response carries the valiss-chain: required signal, the
+// final outcome reported.
 package main
 
 import (
@@ -50,6 +58,9 @@ type outcome struct {
 	// Identity is the accepted identity {"tenant":..., "user":...|null};
 	// null on reject.
 	Identity *identity `json:"identity"`
+	// ChainRequired reports whether the final response carried the
+	// chain-negotiation signal (valiss-chain: required); omitted when false.
+	ChainRequired bool `json:"chain_required,omitempty"`
 }
 
 type identity struct {
@@ -69,6 +80,9 @@ func main() {
 		mode      = flag.String("mode", "signed", "request mode: signed or message")
 		audience  = flag.String("audience", "", "message-mode audience binding")
 		payload   = flag.String("payload", "", "message-mode payload file")
+		tamper    = flag.String("tamper-payload", "", "message-mode file sent instead of the checksummed --payload bytes")
+		ttl       = flag.Duration("ttl", valiss.DefaultMessageTTL, "message-token lifetime; negative mints an already-expired token")
+		chain     = flag.String("chain", "embedded", "message-mode chain delivery: embedded, detached, none, or negotiate")
 	)
 	flag.Parse()
 
@@ -85,7 +99,13 @@ func main() {
 	case "signed":
 		out, err = signed(*transport, *addr, c, *nonce)
 	case "message":
-		out, err = message(*transport, *addr, c, *audience, *payload)
+		out, err = message(*transport, *addr, c, messageOpts{
+			audience:    *audience,
+			payloadPath: *payload,
+			tamperPath:  *tamper,
+			ttl:         *ttl,
+			chain:       *chain,
+		})
 	default:
 		log.Fatalf("unknown mode %q", *mode)
 	}
@@ -167,9 +187,27 @@ func signed(transport, addr string, c creds.Creds, nonce string) (outcome, error
 	}
 }
 
+// messageOpts is the message-mode request shape (the contract's client
+// flags).
+type messageOpts struct {
+	audience    string
+	payloadPath string
+	// tamperPath, when set, names the bytes actually sent; the mint still
+	// checksums the payloadPath bytes.
+	tamperPath string
+	// ttl is the minted token's lifetime; negative mints one already
+	// expired.
+	ttl time.Duration
+	// chain is the delivery mode: embedded, detached, none, or negotiate.
+	chain string
+}
+
 // message mints a per-message proof over the payload bytes bound to the
-// audience, with the creds' chain embedded, and sends payload plus token.
-func message(transport, addr string, c creds.Creds, audience, payloadPath string) (outcome, error) {
+// audience and sends payload plus token, delivering the creds' chain the way
+// opts.chain asks: embedded in the token, detached in the valiss-chain-*
+// headers, not at all, or negotiated — bare first, one retransmit with the
+// detached headers when the response signals valiss-chain: required.
+func message(transport, addr string, c creds.Creds, opts messageOpts) (outcome, error) {
 	if c.AccountToken == "" || c.UserToken == "" || len(c.Seed) == 0 {
 		return outcome{}, errors.New("message mode requires bundle creds: account token, user token, and seed")
 	}
@@ -196,50 +234,90 @@ func message(transport, addr string, c creds.Creds, audience, payloadPath string
 	}
 
 	var payload []byte
-	if payloadPath != "" {
-		payload, err = os.ReadFile(payloadPath)
+	if opts.payloadPath != "" {
+		payload, err = os.ReadFile(opts.payloadPath)
 		if err != nil {
 			return outcome{}, fmt.Errorf("read payload: %w", err)
+		}
+	}
+	// The checksum binds the --payload bytes; --tamper-payload swaps what
+	// actually travels, so the server's payload binding must miss.
+	send := payload
+	if opts.tamperPath != "" {
+		send, err = os.ReadFile(opts.tamperPath)
+		if err != nil {
+			return outcome{}, fmt.Errorf("read tamper payload: %w", err)
 		}
 	}
 
 	mintOpts := []valiss.IssueOption{
 		valiss.WithChecksum(valiss.Checksum(payload)),
-		valiss.WithTTL(valiss.DefaultMessageTTL),
+		valiss.WithTTL(opts.ttl),
 		valiss.WithEpoch(userClaims.Epoch),
-		valiss.WithChain(c.AccountToken, c.UserToken),
 	}
-	if audience != "" {
-		mintOpts = append(mintOpts, valiss.WithAudience(audience))
+	if opts.chain == "embedded" {
+		mintOpts = append(mintOpts, valiss.WithChain(c.AccountToken, c.UserToken))
+	}
+	if opts.audience != "" {
+		mintOpts = append(mintOpts, valiss.WithAudience(opts.audience))
 	}
 	token, err := valiss.IssueMessage(user, mintOpts...)
 	if err != nil {
 		return outcome{}, fmt.Errorf("issue message token: %w", err)
 	}
 
-	switch transport {
-	case "http":
-		var body io.Reader
-		if len(payload) > 0 {
-			body = bytes.NewReader(payload)
+	// call performs the one request, attaching the detached chain headers
+	// when asked; negotiate runs it bare and once more detached on the
+	// signal.
+	call := func(detached bool) (outcome, error) {
+		switch transport {
+		case "http":
+			var body io.Reader
+			if len(send) > 0 {
+				body = bytes.NewReader(send)
+			}
+			req, err := http.NewRequest(http.MethodPost, "http://"+addr+wire.InvokePath, body)
+			if err != nil {
+				return outcome{}, err
+			}
+			req.Header.Set(valiss.HeaderMessageToken, token)
+			if detached {
+				req.Header.Set(valiss.HeaderChainAccountToken, c.AccountToken)
+				req.Header.Set(valiss.HeaderChainUserToken, c.UserToken)
+			}
+			return doHTTP(req)
+		case "grpc":
+			md := metadata.MD{}
+			md.Set(valiss.HeaderMessageToken, token)
+			if detached {
+				md.Set(valiss.HeaderChainAccountToken, c.AccountToken)
+				md.Set(valiss.HeaderChainUserToken, c.UserToken)
+			}
+			return doGRPC(addr, md, send)
+		default:
+			return outcome{}, fmt.Errorf("unknown transport %q", transport)
 		}
-		req, err := http.NewRequest(http.MethodPost, "http://"+addr+wire.InvokePath, body)
-		if err != nil {
-			return outcome{}, err
+	}
+
+	switch opts.chain {
+	case "embedded", "none":
+		return call(false)
+	case "detached":
+		return call(true)
+	case "negotiate":
+		out, err := call(false)
+		if err != nil || !out.ChainRequired {
+			return out, err
 		}
-		req.Header.Set(valiss.HeaderMessageToken, token)
-		return doHTTP(req)
-	case "grpc":
-		md := metadata.MD{}
-		md.Set(valiss.HeaderMessageToken, token)
-		return doGRPC(addr, md, payload)
+		return call(true)
 	default:
-		return outcome{}, fmt.Errorf("unknown transport %q", transport)
+		return outcome{}, fmt.Errorf("unknown chain delivery %q", opts.chain)
 	}
 }
 
 // doHTTP performs the one HTTP request and folds the response into the
-// contract outcome.
+// contract outcome, including whether it carried the chain-negotiation
+// signal header.
 func doHTTP(req *http.Request) (outcome, error) {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -250,14 +328,18 @@ func doHTTP(req *http.Request) (outcome, error) {
 	if err != nil {
 		return outcome{}, fmt.Errorf("read response: %w", err)
 	}
-	out := outcome{Status: resp.StatusCode}
+	out := outcome{
+		Status:        resp.StatusCode,
+		ChainRequired: resp.Header.Get(valiss.HeaderChain) == valiss.ChainRequired,
+	}
 	fill(&out, body)
 	return out, nil
 }
 
 // doGRPC performs the one gRPC call and folds the status into the contract
-// outcome. UNAVAILABLE means the server never answered: an infrastructure
-// error, not an outcome.
+// outcome, reading the chain-negotiation signal from the trailing metadata.
+// UNAVAILABLE means the server never answered: an infrastructure error, not
+// an outcome.
 func doGRPC(addr string, md metadata.MD, payload []byte) (outcome, error) {
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -269,9 +351,17 @@ func doGRPC(addr string, md metadata.MD, payload []byte) (outcome, error) {
 	defer cancel()
 	ctx = metadata.NewOutgoingContext(ctx, md)
 
-	resp, err := interoppb.NewInteropClient(conn).Invoke(ctx, &interoppb.InvokeRequest{Payload: payload})
+	var trailer metadata.MD
+	resp, err := interoppb.NewInteropClient(conn).Invoke(ctx,
+		&interoppb.InvokeRequest{Payload: payload}, grpc.Trailer(&trailer))
+	chainRequired := func() bool {
+		if v := trailer.Get(valiss.HeaderChain); len(v) > 0 {
+			return v[0] == valiss.ChainRequired
+		}
+		return false
+	}
 	if err == nil {
-		out := outcome{Status: grpcCodeNames[codes.OK]}
+		out := outcome{Status: grpcCodeNames[codes.OK], ChainRequired: chainRequired()}
 		fill(&out, []byte(resp.GetJson()))
 		return out, nil
 	}
@@ -279,7 +369,7 @@ func doGRPC(addr string, md metadata.MD, payload []byte) (outcome, error) {
 	if !ok || st.Code() == codes.Unavailable || st.Code() == codes.DeadlineExceeded {
 		return outcome{}, fmt.Errorf("call failed: %w", err)
 	}
-	out := outcome{Status: grpcCodeNames[st.Code()]}
+	out := outcome{Status: grpcCodeNames[st.Code()], ChainRequired: chainRequired()}
 	fill(&out, []byte(st.Message()))
 	return out, nil
 }

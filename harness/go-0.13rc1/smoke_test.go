@@ -2,7 +2,8 @@
 // runnables, starts the server against the committed fixture, and drives the
 // client through the scenarios.yaml suite on each transport and mode,
 // asserting the contract outcomes (CONTRACT.md) including the §7 reason
-// codes on rejection.
+// codes on rejection and the chain-negotiation signal on bare message
+// tokens.
 package smoke
 
 import (
@@ -20,9 +21,10 @@ import (
 
 // outcome mirrors the client's one-line report.
 type outcome struct {
-	Status   any              `json:"status"`
-	Reason   *string          `json:"reason"`
-	Identity *outcomeIdentity `json:"identity"`
+	Status        any              `json:"status"`
+	Reason        *string          `json:"reason"`
+	Identity      *outcomeIdentity `json:"identity"`
+	ChainRequired bool             `json:"chain_required"`
 }
 
 type outcomeIdentity struct {
@@ -225,25 +227,60 @@ func TestSigned(t *testing.T) {
 func TestMessage(t *testing.T) {
 	server, client := bins(t)
 	fixture := fixtureDir(t)
+	const sink = "interop://sink"
 
 	for _, transport := range []string{"http", "grpc"} {
 		t.Run(transport, func(t *testing.T) {
 			addr := startServer(t, server, transport, "message")
-			call := func(audience string) outcome {
-				return runClient(t, client,
+			call := func(creds, audience string, extra ...string) outcome {
+				args := append([]string{
 					"--transport", transport, "--addr", addr,
-					"--creds", filepath.Join(fixture, "creds", "user.creds"),
+					"--creds", filepath.Join(fixture, "creds", creds),
 					"--mode", "message",
 					"--audience", audience,
 					"--payload", filepath.Join(fixture, "payloads", "hello.bin"),
-				)
+				}, extra...)
+				return runClient(t, client, args...)
 			}
 
 			t.Run("valid", func(t *testing.T) {
-				wantAccept(t, transport, call("interop://sink"), "acme", strp("alice"))
+				out := call("user.creds", sink)
+				wantAccept(t, transport, out, "acme", strp("alice"))
+				if out.ChainRequired {
+					t.Error("accept carried the chain-required signal")
+				}
 			})
 			t.Run("wrong-audience", func(t *testing.T) {
-				wantReject(t, transport, call("interop://other"), "wrong_audience")
+				wantReject(t, transport, call("user.creds", "interop://other"), "wrong_audience")
+			})
+			t.Run("revoked-chain", func(t *testing.T) {
+				wantReject(t, transport, call("revoked.creds", sink), "not_allowlisted")
+			})
+			t.Run("checksum-mismatch", func(t *testing.T) {
+				out := call("user.creds", sink,
+					"--tamper-payload", filepath.Join(fixture, "payloads", "tampered.bin"))
+				wantReject(t, transport, out, "checksum_mismatch")
+			})
+			t.Run("expired", func(t *testing.T) {
+				wantReject(t, transport, call("user.creds", sink, "--ttl", "-5m"), "expired")
+			})
+			t.Run("detached-chain", func(t *testing.T) {
+				out := call("user.creds", sink, "--chain", "detached")
+				wantAccept(t, transport, out, "acme", strp("alice"))
+			})
+			t.Run("bare-signals-negotiation", func(t *testing.T) {
+				out := call("user.creds", sink, "--chain", "none")
+				wantReject(t, transport, out, "no_chain")
+				if !out.ChainRequired {
+					t.Error("bare-token reject did not carry the chain-required signal")
+				}
+			})
+			t.Run("chain-negotiation", func(t *testing.T) {
+				out := call("user.creds", sink, "--chain", "negotiate")
+				wantAccept(t, transport, out, "acme", strp("alice"))
+				if out.ChainRequired {
+					t.Error("negotiated accept still carried the chain-required signal")
+				}
 			})
 		})
 	}
