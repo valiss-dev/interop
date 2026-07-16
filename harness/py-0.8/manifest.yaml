@@ -1,0 +1,20 @@
+id: py-0.8
+library: valiss-py
+version: "0.8"
+spec: [1]
+
+server:
+  transports: [http, grpc]
+  modes: [signed, message]
+  features:
+    allowlist: true
+    replay: true
+    epoch: true
+    bearer: true
+client:
+  transports: [http, grpc]
+  modes: [signed, message]
+
+issue: [operator, account, user, message]
+build:
+  dockerfile: Dockerfile

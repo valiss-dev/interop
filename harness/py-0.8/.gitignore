@@ -1,0 +1,5 @@
+# The gRPC stubs are generated from interoppb/interop.proto by the image
+# build (grpcio-tools); ad-hoc local generation must not be committed.
+/interoppb/interop_pb2.py
+/interoppb/interop_pb2_grpc.py
+__pycache__/
