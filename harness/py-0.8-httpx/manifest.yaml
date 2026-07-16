@@ -1,0 +1,18 @@
+id: py-0.8-httpx
+library: valiss-py
+adapter: httpx
+# The framework surface the glue targets. httpx has never cut a 1.0: its
+# compatibility surface moves at the minor (0.27 -> 0.28 was breaking), so
+# the surface identifier is the 0.x minor; the exact patch is pinned in
+# pyproject.toml.
+adapter_version: "0.28"
+version: "0.8"
+spec: [1]
+
+client:
+  transports: [http]
+  modes: [signed, message]
+
+issue: [operator, account, user, message]
+build:
+  dockerfile: Dockerfile
