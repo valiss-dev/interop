@@ -1,4 +1,4 @@
-// Command server is the go-0.13-gin1 interop harness server (CONTRACT.md):
+// Command server is the go-0.13-gin interop harness server (CONTRACT.md):
 // it exposes exactly one protected operation over HTTP, enforced by the
 // shipped Gin adapters of valiss-go 0.13 (contrib/ginauth for signed mode,
 // contrib/ginsig for message mode). The entry exists to exercise the
@@ -45,8 +45,8 @@ import (
 	"valiss.dev/valiss/contrib/ginsig"
 	"valiss.dev/valiss/contrib/httpauth"
 
-	"github.com/valiss-dev/interop/harness/go-0.13-gin1/internal/reason"
-	"github.com/valiss-dev/interop/harness/go-0.13-gin1/internal/wire"
+	"github.com/valiss-dev/interop/harness/go-0.13-gin/internal/reason"
+	"github.com/valiss-dev/interop/harness/go-0.13-gin/internal/wire"
 )
 
 func main() {

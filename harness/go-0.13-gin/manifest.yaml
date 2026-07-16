@@ -1,4 +1,4 @@
-id: go-0.13-gin1
+id: go-0.13-gin
 library: valiss-go
 adapter: gin
 adapter_version: "1"

@@ -1,4 +1,4 @@
-module github.com/valiss-dev/interop/harness/go-0.13-gin1
+module github.com/valiss-dev/interop/harness/go-0.13-gin
 
 go 1.26.4
 

@@ -1,4 +1,4 @@
-// Package smoke proves the go-0.13-gin1 harness end-to-end without
+// Package smoke proves the go-0.13-gin harness end-to-end without
 // containers: it builds this entry's server and the go-0.12 reference
 // client (the known-good driver, like the orchestrator pairs entries),
 // starts the server against the committed fixture, and drives every

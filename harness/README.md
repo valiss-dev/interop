@@ -17,13 +17,15 @@ The directory name is only an ID —
 `<library>-<MAJOR.MINOR[rcN]>[-<adapter><FRAMEWORK_MAJOR>]`, must equal the
 manifest `id`. The `rcN` tag is glued to the version so it can never be
 confused with an adapter segment. **Adapter entries carry the major of the
-surface they target** (`django5`, `echo4`, `asgi3` — spec majors count): a
-major is a distinct integration surface, and encoding it from day one keeps
-the ID stable when a second major appears (`go-0.14-echo4` alongside
-`go-0.14-echo5`). Framework minor/patch stay in the lockfile, like the
-library patch. When the target has no meaningful major (httpx has never cut
-1.0 and breaks on minors), the ID omits it and the manifest's
-`adapter_version` records the actual surface (e.g. `"0.28"`).
+surface they target when it is 2 or higher** (`django5`, `echo4`, `asgi3` —
+spec majors count): a major is a distinct integration surface, and encoding
+it keeps the ID stable when a second major appears (`go-0.14-echo4` alongside
+`go-0.14-echo5`). **Major 1 is omitted** (`gin`, `grpc`), complementing Go's
+own module convention where `/vN` suffixes begin at v2. When the target has
+no meaningful major at all (httpx has never cut 1.0 and breaks on minors),
+the ID likewise omits it. In every case the manifest's `adapter_version`
+records the actual surface (`"1"`, `"0.28"`); framework minor/patch stay in
+the lockfile, like the library patch.
 
 **Granularity is the minor version.** Wire conformance is a property of a
 minor series: patch releases must not change the wire, so an entry pins the
