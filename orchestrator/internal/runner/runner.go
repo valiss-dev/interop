@@ -1,7 +1,6 @@
-// Package runner executes harness entry runnables. The local runner builds
-// Go entries with the host toolchain; the container runners (docker, podman,
-// apple) realize the contract's canonical mode: one image per entry, the
-// fixture bind-mounted read-only.
+// Package runner executes harness entry runnables in the contract's canonical
+// container mode: one image per entry, the fixture bind-mounted read-only.
+// Engines: docker, podman (CLI-compatible), and Apple's container CLI.
 package runner
 
 import (
@@ -72,13 +71,11 @@ type Server interface {
 // New builds the runner selected by name.
 func New(ctx context.Context, name string, paths Paths) (Runner, error) {
 	switch name {
-	case "local":
-		return newLocal(paths)
 	case "docker", "podman":
 		return newCLIEngine(ctx, name, paths)
 	case "apple":
 		return newApple(ctx, paths)
 	default:
-		return nil, fmt.Errorf("unknown runner %q (local, docker, podman, or apple)", name)
+		return nil, fmt.Errorf("unknown runner %q (docker, podman, or apple)", name)
 	}
 }

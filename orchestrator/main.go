@@ -54,7 +54,7 @@ type options struct {
 func run(ctx context.Context, args []string, stdout io.Writer) error {
 	var opts options
 	fs := flag.NewFlagSet("orchestrator", flag.ContinueOnError)
-	fs.StringVar(&opts.runner, "runner", "local", "runner: local, docker, podman, or apple")
+	fs.StringVar(&opts.runner, "runner", "docker", "runner: docker, podman, or apple")
 	fs.StringVar(&opts.root, "root", "", "repo root (default: nearest parent of cwd with scenarios.yaml)")
 	fs.StringVar(&opts.scenarios, "scenarios", "", "scenarios file (default: <root>/scenarios.yaml)")
 	fs.StringVar(&opts.harnessDir, "harness-dir", "", "harness entries directory (default: <root>/harness)")

@@ -26,9 +26,8 @@ prove the wire *bytes* agree). This proves the *transports* integrate.
 
 Operational. The contract, entry/manifest scheme, scenarios, fixture, the
 `harness/go-0.12/` reference entry, and the orchestrator are in place. The
-matrix runs locally with `go -C orchestrator run .` (process runner by
-default; `--runner docker|podman|apple` for the container mode) and in CI
+matrix is container-based: `go -C orchestrator run .` with `--runner
+docker|podman|apple` (docker default), and in CI
 (`.github/workflows/matrix.yaml`, docker runner) on pushes to `main` and PRs.
-Next: Python joins as a client (and message verifier) with the spec-1 port,
-and as a signed-request server once it ships the request verifier
-(allowlist + replay).
+Next: the `py-0.8` entry — valiss-py 0.8 ships the full request verifier and
+transport parity, so it joins as both server and client.

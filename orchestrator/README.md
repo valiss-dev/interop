@@ -15,21 +15,18 @@ the repo root with `go -C orchestrator run .` — the repo root is found via
 `scenarios.yaml`, or pass `--root`):
 
 ```
-go run . [--runner local|docker|podman|apple] [--report out.json]
+go run . [--runner docker|podman|apple] [--report out.json]
          [--only-transport http|grpc] [--only-cell server:client]
          [--root DIR] [--scenarios FILE] [--harness-dir DIR] [--fixture-dir DIR]
 ```
 
-Runners:
+Runners (all container-based; entries are language-agnostic images):
 
-- `local` (default) — builds each entry's `./cmd/server` and `./cmd/client`
-  with the host Go toolchain and runs them as processes. Go entries only.
-- `docker` / `podman` — the contract's canonical container mode: one image
-  per entry (`build.dockerfile`), servers and clients joined on a per-run
-  bridge network, the fixture bind-mounted read-only at `/fixture`.
-- `apple` — the same container mode on Apple's `container` CLI (macOS);
-  containers reach each other by their vmnet IP. Needs
-  `container system start`.
+- `docker` (default) / `podman` — one image per entry (`build.dockerfile`),
+  servers and clients joined on a per-run bridge network, the fixture
+  bind-mounted read-only at `/fixture`.
+- `apple` — the same mode on Apple's `container` CLI (macOS); containers
+  reach each other by their vmnet IP. Needs `container system start`.
 
 Container runners invoke the entry runnables by absolute path
 (`/usr/local/bin/<id>-server`, `/usr/local/bin/<id>-client`), the convention
