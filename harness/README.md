@@ -10,12 +10,17 @@ harness/
 ├── go-0.12/             core Go harness, 0.12.x series
 ├── go-0.13rc1/          release candidates are entries too
 ├── py-0.8/              core Python harness (joins with the spec-1 port)
-└── py-0.8-django/       Django adapter harness (server-only, HTTP)
+└── py-0.8-django5/      Django adapter harness (server-only, HTTP, Django 5.x)
 ```
 
-The directory name is only an ID — `<library>-<MAJOR.MINOR[rcN]>[-<adapter>]`,
-must equal the manifest `id`. The `rcN` tag is glued to the version so it can
-never be confused with an adapter segment.
+The directory name is only an ID —
+`<library>-<MAJOR.MINOR[rcN]>[-<adapter><FRAMEWORK_MAJOR>]`, must equal the
+manifest `id`. The `rcN` tag is glued to the version so it can never be
+confused with an adapter segment. **Adapter entries always carry the framework
+major they target** (`django5`, `echo4`): a framework major is a distinct
+integration surface, and encoding it from day one keeps the ID stable when a
+second major appears (`go-0.14-echo4` alongside `go-0.14-echo5`). Framework
+minor/patch stay in the lockfile, like the library patch.
 
 **Granularity is the minor version.** Wire conformance is a property of a
 minor series: patch releases must not change the wire, so an entry pins the
@@ -35,9 +40,10 @@ by every entry that declares an HTTP client, and vice versa.
 ## Manifest schema
 
 ```yaml
-id: py-0.8-django             # must equal the directory name
+id: py-0.8-django5            # must equal the directory name
 library: valiss-py            # source repository in valiss-dev
 adapter: django               # optional; absent for core entries
+adapter_version: "5"          # framework major the glue targets; exact pin in the lockfile
 version: "0.8"                # minor series (or e.g. "0.13rc1"); exact patch is in the lockfile
 spec: [1]                     # wire spec versions implemented ([] = pre-spec legacy)
 

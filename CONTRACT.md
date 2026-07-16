@@ -6,7 +6,8 @@ valiss **client** written in language B exactly as the reference does, over
 each transport. Where the static vectors (in `valiss-dev/spec`) prove the wire
 bytes agree, this proves the transports integrate.
 
-Every **implementation entry** (`harness/<library>-<minor>[-<adapter>]`, see
+Every **implementation entry**
+(`harness/<library>-<minor>[-<adapter><framework-major>]`, see
 `harness/README.md`) supplies the runnables it declares in its manifest. The
 orchestrator derives the grid from manifests: for each transport, every entry
 declaring a server pairs with every entry declaring a client — across

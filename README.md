@@ -13,10 +13,11 @@ prove the wire *bytes* agree). This proves the *transports* integrate.
 - **`scenarios.yaml`** — the language-neutral scenario suite.
 - **`fixture/`** — frozen keys, allowlist, and creds, generated from the Go
   reference.
-- **`harness/<library>-<minor>[-<adapter>]/`** — frozen implementation
-  entries, each a thin server/client harness wrapping a pinned implementation
-  version, with a capability manifest (see `harness/README.md`). Entries are
-  frozen per minor version, so the grid also tests **cross-version**
+- **`harness/<library>-<minor>[-<adapter><framework-major>]/`** — frozen
+  implementation entries, each a thin server/client harness wrapping a pinned
+  implementation version, with a capability manifest (see
+  `harness/README.md`). Entries are frozen per minor version — and adapter
+  entries per framework major — so the grid also tests **cross-version**
   conformance.
 - **`orchestrator/`** — the matrix runner (containers + compose); derives the
   grid from the manifests.
