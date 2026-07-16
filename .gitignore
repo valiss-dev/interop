@@ -3,3 +3,6 @@
 
 # machine report written by the CI workflow / local runs
 matrix-report.json
+
+# local Claude Code state (worktrees, session files)
+.claude/
