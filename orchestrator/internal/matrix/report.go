@@ -95,21 +95,7 @@ func renderTable(w io.Writer, cells []*CellResult) {
 }
 
 func renderDetails(w io.Writer, res *Result) {
-	var failures, skips []string
-	for _, c := range res.Cells {
-		cell := fmt.Sprintf("%s %s -> %s", c.Transport, c.Server, c.Client)
-		for _, e := range c.Errors {
-			failures = append(failures, fmt.Sprintf("%s :: %s", cell, e))
-		}
-		for _, sr := range c.Scenarios {
-			switch sr.Status {
-			case statusFail:
-				failures = append(failures, fmt.Sprintf("%s :: %s: %s", cell, sr.ID, sr.Detail))
-			case statusSkip:
-				skips = append(skips, fmt.Sprintf("%s :: %s (%s)", cell, sr.ID, sr.Detail))
-			}
-		}
-	}
+	failures, skips := collectDetails(res)
 	if len(failures) > 0 {
 		fmt.Fprintf(w, "\nfailures:\n  %s\n", strings.Join(failures, "\n  "))
 	}

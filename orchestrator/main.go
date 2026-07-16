@@ -101,6 +101,9 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 
 	matrix.Render(stdout, res)
+	if err := matrix.WriteGitHub(res); err != nil {
+		log.Printf("github summary: %v", err)
+	}
 	if opts.report != "" {
 		if err := matrix.WriteJSON(opts.report, res); err != nil {
 			return fmt.Errorf("write report: %w", err)
