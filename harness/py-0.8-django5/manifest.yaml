@@ -1,0 +1,19 @@
+id: py-0.8-django5
+library: valiss-py
+adapter: django
+adapter_version: "5"
+version: "0.8"
+spec: [1]
+
+server:
+  transports: [http]
+  modes: [signed, message]
+  features:
+    allowlist: true
+    replay: true
+    epoch: true
+    bearer: true
+
+issue: [operator, account, user, message]
+build:
+  dockerfile: Dockerfile
