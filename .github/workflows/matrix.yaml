@@ -2,7 +2,7 @@ name: matrix
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   pull_request:
 
 permissions:
@@ -12,26 +12,26 @@ jobs:
   matrix:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-    - name: Setup Go
-      uses: actions/setup-go@v5
-      with:
-        go-version-file: orchestrator/go.mod
-        cache-dependency-path: orchestrator/go.sum
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: orchestrator/go.mod
+          cache-dependency-path: orchestrator/go.sum
 
-    - name: Unit tests
-      working-directory: orchestrator
-      run: go test ./...
+      - name: Unit tests
+        working-directory: orchestrator
+        run: go test ./...
 
-    - name: Run the interop matrix
-      working-directory: orchestrator
-      run: go run . --runner docker --report matrix-report.json
+      - name: Run the interop matrix
+        working-directory: orchestrator
+        run: go run . --runner docker --report matrix-report.json
 
-    - name: Upload report
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: matrix-report
-        path: orchestrator/matrix-report.json
-        if-no-files-found: ignore
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: matrix-report
+          path: orchestrator/matrix-report.json
+          if-no-files-found: ignore
