@@ -1,4 +1,4 @@
-module github.com/valiss-dev/interop/harness/go-0.13rc1
+module github.com/valiss-dev/interop/harness/go-0.13
 
 go 1.26.4
 
@@ -6,7 +6,7 @@ require (
 	github.com/nats-io/nkeys v0.4.16
 	google.golang.org/grpc v1.82.0
 	google.golang.org/protobuf v1.36.11
-	valiss.dev/valiss v0.13.0-rc.1
+	valiss.dev/valiss v0.13.0
 )
 
 require (

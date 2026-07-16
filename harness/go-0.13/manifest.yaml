@@ -1,6 +1,6 @@
-id: go-0.13rc1
+id: go-0.13
 library: valiss-go
-version: "0.13rc1"
+version: "0.13"
 spec: [1]
 
 server:

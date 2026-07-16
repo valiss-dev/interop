@@ -1,4 +1,4 @@
-// Command client is the go-0.13rc1 interop harness client (CONTRACT.md): it
+// Command client is the go-0.13 interop harness client (CONTRACT.md): it
 // makes exactly one authenticated request and reports the raw outcome as one
 // JSON line — {"status": <int|grpc-code-string>, "reason": <§7 code|null>,
 // "identity": {...}|null, "chain_required": <bool>} — exiting 0 whether the
@@ -45,8 +45,8 @@ import (
 	"valiss.dev/valiss"
 	"valiss.dev/valiss/creds"
 
-	"github.com/valiss-dev/interop/harness/go-0.13rc1/internal/wire"
-	"github.com/valiss-dev/interop/harness/go-0.13rc1/interoppb"
+	"github.com/valiss-dev/interop/harness/go-0.13/internal/wire"
+	"github.com/valiss-dev/interop/harness/go-0.13/interoppb"
 )
 
 // outcome is the client's one-line report.

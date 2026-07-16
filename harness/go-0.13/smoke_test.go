@@ -1,4 +1,4 @@
-// Package smoke proves the go-0.13rc1 harness end-to-end: it builds both
+// Package smoke proves the go-0.13 harness end-to-end: it builds both
 // runnables, starts the server against the committed fixture, and drives the
 // client through the scenarios.yaml suite on each transport and mode,
 // asserting the contract outcomes (CONTRACT.md) including the §7 reason

@@ -15,7 +15,7 @@ syntax = "proto3";
 
 package valiss.interop.v1;
 
-option go_package = "github.com/valiss-dev/interop/harness/go-0.13rc1/interoppb";
+option go_package = "github.com/valiss-dev/interop/harness/go-0.13/interoppb";
 
 service Interop {
   rpc Invoke(InvokeRequest) returns (InvokeResponse);

@@ -1,4 +1,4 @@
-// Command server is the go-0.13rc1 interop harness server (CONTRACT.md): it
+// Command server is the go-0.13 interop harness server (CONTRACT.md): it
 // exposes exactly one protected operation over HTTP or gRPC.
 //
 // In signed mode it runs the valiss Verifier against the pinned operator key
@@ -39,9 +39,9 @@ import (
 
 	"valiss.dev/valiss"
 
-	"github.com/valiss-dev/interop/harness/go-0.13rc1/internal/reason"
-	"github.com/valiss-dev/interop/harness/go-0.13rc1/internal/wire"
-	"github.com/valiss-dev/interop/harness/go-0.13rc1/interoppb"
+	"github.com/valiss-dev/interop/harness/go-0.13/internal/reason"
+	"github.com/valiss-dev/interop/harness/go-0.13/internal/wire"
+	"github.com/valiss-dev/interop/harness/go-0.13/interoppb"
 )
 
 func main() {
