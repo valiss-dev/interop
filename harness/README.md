@@ -32,6 +32,9 @@ against every newer one, and a patch that does change the wire shows up as a
 matrix failure. RC entries are the exception to retention: an RC entry gates
 the release it precedes and is superseded by that release's entry — same
 minor series, same wire surface, so there is no cross-version pair to keep.
+Cutting an RC at all is a judgment call pre-1.0 (ADR 0013): wire-touching
+changes warrant one; purely additive releases may skip straight to a stable
+entry.
 
 **What an entry can do lives in its `manifest.yaml`**, per role: which
 transports it serves, which it can call, which modes and verifier features it
