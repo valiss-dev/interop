@@ -1,0 +1,37 @@
+name: matrix
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: orchestrator/go.mod
+        cache-dependency-path: orchestrator/go.sum
+
+    - name: Unit tests
+      working-directory: orchestrator
+      run: go test ./...
+
+    - name: Run the interop matrix
+      working-directory: orchestrator
+      run: go run . --runner docker --report matrix-report.json
+
+    - name: Upload report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: matrix-report
+        path: orchestrator/matrix-report.json
+        if-no-files-found: ignore
