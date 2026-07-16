@@ -1,4 +1,4 @@
-id: py-0.8-asgi
+id: py-0.8-asgi3
 library: valiss-py
 adapter: asgi
 # The ASGI spec major the shipped middlewares implement; the servers that

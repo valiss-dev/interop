@@ -1,5 +1,5 @@
-# The py-0.8-asgi entry's runnable as one installable package: the console
-# script lands in /usr/local/bin as py-0.8-asgi-server, the path the
+# The py-0.8-asgi3 entry's runnable as one installable package: the console
+# script lands in /usr/local/bin as py-0.8-asgi3-server, the path the
 # orchestrator's container runners invoke. The valiss dependency is the frozen
 # 0.8 series; the Dockerfile supplies it from the v0.8.0 git tag (valiss-py is
 # not published to PyPI). The ASGI major lives in the manifest's
@@ -11,7 +11,7 @@
 [project]
 name = "valiss-interop-py-0-8-asgi"
 version = "0"
-description = "py-0.8-asgi valiss interop harness entry: ASGI server runnable (CONTRACT.md)"
+description = "py-0.8-asgi3 valiss interop harness entry: ASGI server runnable (CONTRACT.md)"
 requires-python = ">=3.11"
 dependencies = [
     "valiss==0.8.0",
@@ -21,8 +21,8 @@ dependencies = [
 ]
 
 [project.scripts]
-# Quoted: a bare py-0.8-asgi-server would TOML-parse as a dotted key.
-"py-0.8-asgi-server" = "interopharness.server:main"
+# Quoted: a bare py-0.8-asgi3-server would TOML-parse as a dotted key.
+"py-0.8-asgi3-server" = "interopharness.server:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -1,7 +1,7 @@
-# Builds the py-0.8-asgi interop entry: a server-only image providing the
+# Builds the py-0.8-asgi3 interop entry: a server-only image providing the
 # one declared runnable (manifest.yaml build.dockerfile). The orchestrator
 # invokes it by full path:
-#   /usr/local/bin/py-0.8-asgi-server --transport http --addr ... \
+#   /usr/local/bin/py-0.8-asgi3-server --transport http --addr ... \
 #       --operator ... --allowlist ... [--mode ...]
 #
 # The valiss dependency is the frozen v0.8.0 git tag — never a local

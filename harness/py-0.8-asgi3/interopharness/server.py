@@ -70,7 +70,7 @@ async def _serve(server: uvicorn.Server, sock, addr: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="py-0.8-asgi-server", description=__doc__)
+    parser = argparse.ArgumentParser(prog="py-0.8-asgi3-server", description=__doc__)
     parser.add_argument("--transport", choices=["http"], default="http",
                         help="transport to serve (this entry is HTTP-only)")
     parser.add_argument("--addr", default="127.0.0.1:0", help="HOST:PORT to listen on")
