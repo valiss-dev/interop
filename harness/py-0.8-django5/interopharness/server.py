@@ -2,7 +2,7 @@
 (CONTRACT.md): it exposes exactly one protected operation over HTTP — a
 minimal Django project enforced by the shipped Django middleware of
 valiss-py 0.8 (``valiss.httpauth.django`` for signed mode,
-``valiss.httpsig.django`` for message mode; bound in :mod:`.auth`). The
+``valiss.httpsig.django`` for message mode; bound in :mod:`.valiss`). The
 entry exists to exercise the shipped middleware, so it is the enforcement
 path; the harness only layers the contract glue the shipped classes do not
 produce (:mod:`.middleware`, :mod:`.views`).
@@ -56,9 +56,9 @@ def configure(mode: str, operator: str, allowlist: str) -> None:
         # so it must not see the rewrite.
         middleware.append(f"{__package__}.middleware.sink_audience")
     middleware.append(
-        f"{__package__}.auth.valiss_signed"
+        f"{__package__}.valiss.valiss_signed"
         if mode == "signed"
-        else f"{__package__}.auth.valiss_message"
+        else f"{__package__}.valiss.valiss_message"
     )
     settings.configure(
         DEBUG=False,

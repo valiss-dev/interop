@@ -6,6 +6,11 @@ dotted path. The entry exists to exercise these shipped classes, so this
 module is the enforcement path; the contract glue around them lives in
 :mod:`.middleware` and :mod:`.views`.
 
+This module shares the library's name deliberately (it is the valiss binding);
+absolute imports keep them apart — the library resolves top-level, this module
+only as ``interopharness.valiss``. Do not run files from inside the package
+directory, or the sibling would shadow the library on ``sys.path``.
+
 ``valiss_signed`` — signed-request mode: the shipped Verifier holds the
 pinned operator key, the file-backed allowlist (revocation), and an
 in-memory replay cache (which makes a nonce mandatory on signed requests);

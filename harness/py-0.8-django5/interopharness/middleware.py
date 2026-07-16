@@ -1,6 +1,6 @@
 """Contract glue around the shipped valiss-py Django middleware (CONTRACT.md).
 
-Enforcement is the shipped middleware bound in :mod:`.auth`
+Enforcement is the shipped middleware bound in :mod:`.valiss`
 (``valiss.httpauth.django`` in signed mode, ``valiss.httpsig.django`` in
 message mode); this module layers only what the interop contract demands and
 the shipped classes do not produce, mirroring the gin entry's adapter/glue
