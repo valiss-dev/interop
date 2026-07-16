@@ -8,7 +8,7 @@ themselves live in their own repos). One directory per
 ```
 harness/
 ├── go-0.12/             core Go harness, 0.12.x series
-├── go-0.13rc1/          release candidates are entries too
+├── go-0.13/             core Go harness, 0.13.x series
 ├── py-0.8/              core Python harness (joins with the spec-1 port)
 └── py-0.8-django5/      Django adapter harness (server-only, HTTP, Django 5.x)
 ```
@@ -29,7 +29,9 @@ entry. The minor version is immutable — a new minor (or a new RC) is a **new
 entry**, and old entries stay in the matrix. That is what makes the matrix
 test **cross-version** conformance: every frozen entry keeps being paired
 against every newer one, and a patch that does change the wire shows up as a
-matrix failure.
+matrix failure. RC entries are the exception to retention: an RC entry gates
+the release it precedes and is superseded by that release's entry — same
+minor series, same wire surface, so there is no cross-version pair to keep.
 
 **What an entry can do lives in its `manifest.yaml`**, per role: which
 transports it serves, which it can call, which modes and verifier features it
