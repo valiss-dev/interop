@@ -1,0 +1,21 @@
+id: py-0.8-asgi
+library: valiss-py
+adapter: asgi
+# The ASGI spec major the shipped middlewares implement; the servers that
+# host it (uvicorn, starlette's type surface) are pinned in pyproject.toml.
+adapter_version: "3"
+version: "0.8"
+spec: [1]
+
+server:
+  transports: [http]
+  modes: [signed, message]
+  features:
+    allowlist: true
+    replay: true
+    epoch: true
+    bearer: true
+
+issue: [operator, account, user, message]
+build:
+  dockerfile: Dockerfile
