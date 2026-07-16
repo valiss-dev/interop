@@ -6,8 +6,11 @@ valiss **client** written in language B exactly as the reference does, over
 each transport. Where the static vectors (in `valiss-dev/spec`) prove the wire
 bytes agree, this proves the transports integrate.
 
-Every implementation supplies two runnables that speak this fixed contract. The
-orchestrator drives the grid `server_lang × client_lang × transport`.
+Every **implementation entry** (`impl/<library>-<minor>[-<adapter>]`, see
+`impl/README.md`) supplies the runnables it declares in its manifest. The
+orchestrator derives the grid from manifests: for each transport, every entry
+declaring a server pairs with every entry declaring a client — across
+libraries, adapters, and frozen minor versions alike.
 
 ## Roles
 
@@ -112,23 +115,28 @@ same code across implementations.
 
 ## Orchestrator
 
-For each `transport`, for each `server_lang`, start that server with the
-fixture; then for each `client_lang`, run every scenario through the client
-against the server and compare the client's reported outcome to `expect`. A
-cell `(server_lang × client_lang × transport)` passes when all its scenarios
-pass; the matrix passes when all cells pass. Implementations run as containers
-(one image per impl building both runnables) so the orchestrator needs no
-per-language toolchain.
+For each transport `T`: for each entry `S` whose manifest declares
+`server.transports ∋ T`, start `S`'s server with the fixture; then for each
+entry `C` declaring `client.transports ∋ T`, run every applicable scenario
+through `C`'s client against it and compare the client's reported outcome to
+`expect`. A cell `(S × C × T)` passes when all its applicable scenarios pass;
+the matrix passes when all cells pass. Cells with no shared spec version are
+recorded **incompatible** (expected, not a failure); scenarios gated off by a
+missing server capability (`requires`) are reported as skipped, not failed.
+Entries run as containers (one image per entry building its declared
+runnables), so the orchestrator needs no per-language toolchain.
 
 ## Conformance
 
-An implementation is **matrix-conformant** for a transport when, as both server
-and client, it passes every scenario against the reference and against every
-other conformant implementation. Server-side scenarios that require the full
-request verifier (revocation via allowlist, replay) apply only once an
-implementation ships that verifier; an impl may join the matrix as a
-client-and-message-verifier first and add server-side signed-request
-conformance later.
+An entry is **matrix-conformant** for a transport when, in each role it
+declares, it passes every applicable scenario against the reference entry and
+against every other conformant entry sharing a spec version. Capabilities are
+declared, not assumed: an entry may join as client-only (or
+message-verifier-only) and add server-side signed-request conformance once its
+library ships the request verifier (revocation via allowlist, replay). Because
+entries are frozen per minor version, the same machinery yields
+**cross-version** conformance: every past entry keeps being paired against
+every newer one.
 
 ## Layout
 
@@ -137,9 +145,8 @@ interop/
 ├── CONTRACT.md          this file
 ├── scenarios.yaml       language-neutral scenario suite
 ├── fixture/             frozen keys, allowlist, creds (+ Go generator)
-├── harnesses/
-│   ├── go/              reference server + client
-│   └── py/              Python server + client (added when it ships the verifier)
+├── impl/                frozen implementation entries (see impl/README.md)
+│   └── go-0.12/         reference entry: manifest + server + client
 ├── orchestrator/        the matrix runner + container compose
 └── .github/workflows/   CI running the matrix
 ```

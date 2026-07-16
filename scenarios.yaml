@@ -1,10 +1,11 @@
 # Language-neutral interop scenario suite (ADR 0010). Each scenario names
 # fixture creds, the request shape, and the expected outcome. The orchestrator
-# runs every scenario for its transport against every (server, client) pair.
+# runs every scenario in every (server entry × client entry × transport) cell
+# derived from the impl/ manifests, unless `transport` pins one.
 # Reason codes are the spec/SPEC-1.md §7 taxonomy.
 #
-# Transports (http, grpc) share these scenarios; the orchestrator expands each
-# over both unless `transport` pins one.
+# `requires` lists server capabilities (manifest server.features) the scenario
+# depends on; a cell whose server lacks one reports the scenario as skipped.
 
 scenarios:
   # --- signed-request mode (credential transports) ---
@@ -21,11 +22,13 @@ scenarios:
   - id: signed/bearer/valid
     mode: signed
     creds: bearer.creds        # no seed; accepted without a request signature
+    requires: [bearer]
     expect: { accept: true, user: alice }
 
   - id: signed/account/revoked
     mode: signed
     creds: revoked.creds       # valid token, account not in allowlist
+    requires: [allowlist]
     expect: { accept: false, reason: not_allowlisted }
 
   - id: signed/expired
@@ -43,6 +46,7 @@ scenarios:
     creds: user.creds
     nonce: interop-nonce-1
     repeat: 2                  # first accepted, second is a replay
+    requires: [replay]
     expect_last: { accept: false, reason: replay }
 
   # --- message-token mode (proof-of-origin transports) ---
