@@ -1,0 +1,61 @@
+# Language-neutral interop scenario suite (ADR 0010). Each scenario names
+# fixture creds, the request shape, and the expected outcome. The orchestrator
+# runs every scenario for its transport against every (server, client) pair.
+# Reason codes are the spec/SPEC-1.md §7 taxonomy.
+#
+# Transports (http, grpc) share these scenarios; the orchestrator expands each
+# over both unless `transport` pins one.
+
+scenarios:
+  # --- signed-request mode (credential transports) ---
+  - id: signed/account/valid
+    mode: signed
+    creds: account.creds
+    expect: { accept: true, tenant: acme }
+
+  - id: signed/user/valid
+    mode: signed
+    creds: user.creds
+    expect: { accept: true, tenant: acme, user: alice }
+
+  - id: signed/bearer/valid
+    mode: signed
+    creds: bearer.creds        # no seed; accepted without a request signature
+    expect: { accept: true, user: alice }
+
+  - id: signed/account/revoked
+    mode: signed
+    creds: revoked.creds       # valid token, account not in allowlist
+    expect: { accept: false, reason: not_allowlisted }
+
+  - id: signed/expired
+    mode: signed
+    creds: expired.creds
+    expect: { accept: false, reason: expired }
+
+  - id: signed/wrong-key
+    mode: signed
+    creds: wrongkey.creds      # seed does not match token subject
+    expect: { accept: false, reason: bad_request_signature }
+
+  - id: signed/replay
+    mode: signed
+    creds: user.creds
+    nonce: interop-nonce-1
+    repeat: 2                  # first accepted, second is a replay
+    expect_last: { accept: false, reason: replay }
+
+  # --- message-token mode (proof-of-origin transports) ---
+  - id: message/valid
+    mode: message
+    creds: user.creds
+    audience: interop://sink
+    payload: fixture/payloads/hello.bin
+    expect: { accept: true, tenant: acme, user: alice }
+
+  - id: message/wrong-audience
+    mode: message
+    creds: user.creds
+    audience: interop://other
+    payload: fixture/payloads/hello.bin
+    expect: { accept: false, reason: wrong_audience }
