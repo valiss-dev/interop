@@ -1,0 +1,19 @@
+id: go-0.13-echo4
+library: valiss-go
+adapter: echo
+adapter_version: "4"
+version: "0.13"
+spec: [1]
+
+server:
+  transports: [http]
+  modes: [signed, message]
+  features:
+    allowlist: true
+    replay: true
+    epoch: true
+    bearer: true
+
+issue: [operator, account, user, message]
+build:
+  dockerfile: Dockerfile
