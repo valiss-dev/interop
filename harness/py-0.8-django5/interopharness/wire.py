@@ -7,7 +7,9 @@ from scenarios.yaml, and the contract's accept/reject response shapes
 
 The context byte layout is identical to valiss-py's
 ``valiss.httpauth.extension.request_context``; it is restated here so the
-harness's wire conventions live in one visible place.
+harness's wire conventions live in one visible place. On the server side the
+shipped middleware derives the context itself — this restatement drives the
+smoke test's client.
 """
 
 from __future__ import annotations

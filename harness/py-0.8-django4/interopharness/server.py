@@ -1,17 +1,21 @@
 """The Django interop harness server for the valiss-py 0.8 series
 (CONTRACT.md): it exposes exactly one protected operation over HTTP — a
-minimal Django project whose middleware enforces valiss authentication
-through Django's request stack.
+minimal Django project enforced by the shipped Django middleware of
+valiss-py 0.8 (``valiss.httpauth.django`` for signed mode,
+``valiss.httpsig.django`` for message mode; bound in :mod:`.auth`). The
+entry exists to exercise the shipped middleware, so it is the enforcement
+path; the harness only layers the contract glue the shipped classes do not
+produce (:mod:`.middleware`, :mod:`.views`).
 
-In signed mode :class:`~.middleware.ValissSignedMiddleware` runs the valiss
-Verifier against the pinned operator key and the file-backed allowlist, with
-a replay cache (signed requests must carry a nonce) and bearer user tokens
-accepted. In message mode :class:`~.middleware.ValissMessageMiddleware`
-verifies a per-message proof of origin: audience pinned to the interop sink,
-checksum bound to the received payload, the chain embedded or in the
-detached headers, and the chain's account checked against the same
-allowlist; a chainless token draws the ``valiss-chain: required``
-negotiation signal.
+In signed mode the shipped Verifier checks the chain against the pinned
+operator key, the file-backed allowlist, epoch agreement, and the request
+signature, with a replay cache (signed requests must carry a nonce) and
+bearer user tokens accepted. In message mode the shipped receiver verifies a
+per-message proof of origin — audience (rewritten to the interop sink by the
+glue), checksum over the received payload, the chain embedded or in the
+detached headers — and answers a chainless token with the ``valiss-chain:
+required`` negotiation signal; the view holds the chain's account to the
+same allowlist.
 
 Accept answers HTTP 200 with the contract's accept JSON; reject answers HTTP
 401 with {"ok":false,"reason":<§7>}. The Django WSGI application runs under
@@ -39,28 +43,32 @@ from django.core.wsgi import get_wsgi_application
 
 from valiss import ValissError
 
-from . import wire
-
 
 def configure(mode: str, operator: str, allowlist: str) -> None:
-    """Assemble the minimal Django project: one middleware picked by mode,
-    one route, and no apps, database, or templates. SECRET_KEY is random per
-    process — no Django signing feature is in play, the setting only has to
-    be non-empty."""
+    """Assemble the minimal Django project: the contract glue outermost, the
+    mode's shipped valiss middleware innermost, one route, and no apps,
+    database, or templates. SECRET_KEY is random per process — no Django
+    signing feature is in play, the setting only has to be non-empty."""
+    middleware = [f"{__package__}.middleware.contract_responses"]
+    if mode == "message":
+        # The audience rewrite must precede the shipped middleware (and any
+        # request.headers access); signed mode signs the real host and path,
+        # so it must not see the rewrite.
+        middleware.append(f"{__package__}.middleware.sink_audience")
+    middleware.append(
+        f"{__package__}.auth.valiss_signed"
+        if mode == "signed"
+        else f"{__package__}.auth.valiss_message"
+    )
     settings.configure(
         DEBUG=False,
         SECRET_KEY=secrets.token_urlsafe(32),
         ALLOWED_HOSTS=["*"],
         ROOT_URLCONF=f"{__package__}.urls",
-        MIDDLEWARE=[
-            f"{__package__}.middleware.ValissSignedMiddleware"
-            if mode == "signed"
-            else f"{__package__}.middleware.ValissMessageMiddleware"
-        ],
+        MIDDLEWARE=middleware,
         VALISS={
             "OPERATOR_PUB_FILE": operator,
             "ALLOWLIST_FILE": allowlist,
-            "AUDIENCE": wire.SINK_AUDIENCE,
         },
     )
     django.setup()
