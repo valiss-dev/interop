@@ -1,0 +1,13 @@
+module github.com/valiss-dev/interop/fixture/gen
+
+go 1.26.4
+
+require (
+	github.com/nats-io/nkeys v0.4.16
+	valiss.dev/valiss v0.12.0
+)
+
+require (
+	golang.org/x/crypto v0.52.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+)
