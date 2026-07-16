@@ -1,0 +1,28 @@
+# The py-0.8-django4 entry's runnable as one installable package: the console
+# script lands in /usr/local/bin as py-0.8-django4-server, the path the
+# orchestrator's container runners invoke. The valiss dependency is the frozen
+# 0.8 series; the Dockerfile supplies it from the v0.8.0 git tag (valiss-py is
+# not published to PyPI). Django is the entry's adapter surface: the framework
+# major lives in the manifest's adapter_version, the exact 4.2 LTS patch is
+# this lockfile's to bump.
+[project]
+name = "valiss-interop-py-0-8-django4"
+version = "0"
+description = "py-0.8-django4 valiss interop harness entry: Django 4 server runnable (CONTRACT.md)"
+requires-python = ">=3.11"
+dependencies = [
+    "valiss==0.8.0",
+    "cryptography==49.0.0",
+    "Django==4.2.30",
+]
+
+[project.scripts]
+# Quoted: a bare py-0.8-django4-server would TOML-parse as a dotted key.
+"py-0.8-django4-server" = "interopharness.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["interopharness"]
