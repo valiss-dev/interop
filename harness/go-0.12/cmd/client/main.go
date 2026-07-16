@@ -11,7 +11,14 @@
 // value when fixed by the scenario, a fresh random one otherwise, because a
 // replay-suppressing server (like this entry's) requires one on every signed
 // request. In message mode the client mints a message token over the
-// --payload bytes bound to --audience, with the creds' chain embedded.
+// --payload bytes bound to --audience with the --ttl lifetime (negative
+// mints an already-expired token), sends the --tamper-payload bytes instead
+// when given, and delivers the creds' chain per --chain: embedded in the
+// token (default), detached in the chain headers, none at all, or negotiate
+// — bare first, retransmitting once with the detached headers when the
+// response carries the valiss-chain: required signal. The outcome line
+// reports "chain_required": true when the final response carried that
+// signal.
 package main
 
 import (
@@ -25,6 +32,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/nats-io/nkeys"
@@ -50,6 +58,9 @@ type outcome struct {
 	// Identity is the accepted identity {"tenant":..., "user":...|null};
 	// null on reject.
 	Identity *identity `json:"identity"`
+	// ChainRequired reports whether the final response carried the
+	// chain-negotiation signal (message mode); omitted when false.
+	ChainRequired bool `json:"chain_required,omitempty"`
 }
 
 type identity struct {
@@ -69,6 +80,9 @@ func main() {
 		mode      = flag.String("mode", "signed", "request mode: signed or message")
 		audience  = flag.String("audience", "", "message-mode audience binding")
 		payload   = flag.String("payload", "", "message-mode payload file")
+		tamper    = flag.String("tamper-payload", "", "message mode: send this file's bytes instead of the checksummed --payload ones")
+		ttl       = flag.String("ttl", "30s", "message-token lifetime, Go duration syntax; negative mints an already-expired token")
+		chain     = flag.String("chain", "embedded", "message-mode chain delivery: embedded, detached, none, or negotiate")
 	)
 	flag.Parse()
 
@@ -85,7 +99,7 @@ func main() {
 	case "signed":
 		out, err = signed(*transport, *addr, c, *nonce)
 	case "message":
-		out, err = message(*transport, *addr, c, *audience, *payload)
+		out, err = message(*transport, *addr, c, *audience, *payload, *tamper, *ttl, *chain)
 	default:
 		log.Fatalf("unknown mode %q", *mode)
 	}
@@ -168,8 +182,20 @@ func signed(transport, addr string, c creds.Creds, nonce string) (outcome, error
 }
 
 // message mints a per-message proof over the payload bytes bound to the
-// audience, with the creds' chain embedded, and sends payload plus token.
-func message(transport, addr string, c creds.Creds, audience, payloadPath string) (outcome, error) {
+// audience, and sends the payload (or the tamper bytes) plus token, with the
+// chain delivered per chainMode: embedded in the token, detached in the
+// chain headers, none at all, or negotiated — bare first, retransmitted once
+// with the detached headers on the valiss-chain: required signal.
+func message(transport, addr string, c creds.Creds, audience, payloadPath, tamperPath, ttlFlag, chainMode string) (outcome, error) {
+	switch chainMode {
+	case "embedded", "detached", "none", "negotiate":
+	default:
+		return outcome{}, fmt.Errorf("unknown chain mode %q", chainMode)
+	}
+	ttl, err := time.ParseDuration(ttlFlag)
+	if err != nil {
+		return outcome{}, fmt.Errorf("parse ttl: %w", err)
+	}
 	if c.AccountToken == "" || c.UserToken == "" || len(c.Seed) == 0 {
 		return outcome{}, errors.New("message mode requires bundle creds: account token, user token, and seed")
 	}
@@ -202,12 +228,23 @@ func message(transport, addr string, c creds.Creds, audience, payloadPath string
 			return outcome{}, fmt.Errorf("read payload: %w", err)
 		}
 	}
+	// The checksum is minted over --payload; the tamper bytes, when given,
+	// are what actually travels.
+	send := payload
+	if tamperPath != "" {
+		send, err = os.ReadFile(tamperPath)
+		if err != nil {
+			return outcome{}, fmt.Errorf("read tamper payload: %w", err)
+		}
+	}
 
 	mintOpts := []valiss.IssueOption{
 		valiss.WithChecksum(valiss.Checksum(payload)),
-		valiss.WithTTL(valiss.DefaultMessageTTL),
+		valiss.WithTTL(ttl),
 		valiss.WithEpoch(userClaims.Epoch),
-		valiss.WithChain(c.AccountToken, c.UserToken),
+	}
+	if chainMode == "embedded" {
+		mintOpts = append(mintOpts, valiss.WithChain(c.AccountToken, c.UserToken))
 	}
 	if audience != "" {
 		mintOpts = append(mintOpts, valiss.WithAudience(audience))
@@ -217,29 +254,52 @@ func message(transport, addr string, c creds.Creds, audience, payloadPath string
 		return outcome{}, fmt.Errorf("issue message token: %w", err)
 	}
 
-	switch transport {
-	case "http":
-		var body io.Reader
-		if len(payload) > 0 {
-			body = bytes.NewReader(payload)
+	// attempt performs the one call; detached says whether the chain rides
+	// along in the detached headers.
+	attempt := func(detached bool) (outcome, error) {
+		switch transport {
+		case "http":
+			var body io.Reader
+			if len(send) > 0 {
+				body = bytes.NewReader(send)
+			}
+			req, err := http.NewRequest(http.MethodPost, "http://"+addr+wire.InvokePath, body)
+			if err != nil {
+				return outcome{}, err
+			}
+			req.Header.Set(valiss.HeaderMessageToken, token)
+			if detached {
+				req.Header.Set(valiss.HeaderChainAccountToken, c.AccountToken)
+				req.Header.Set(valiss.HeaderChainUserToken, c.UserToken)
+			}
+			return doHTTP(req)
+		case "grpc":
+			md := metadata.MD{}
+			md.Set(valiss.HeaderMessageToken, token)
+			if detached {
+				md.Set(valiss.HeaderChainAccountToken, c.AccountToken)
+				md.Set(valiss.HeaderChainUserToken, c.UserToken)
+			}
+			return doGRPC(addr, md, send)
+		default:
+			return outcome{}, fmt.Errorf("unknown transport %q", transport)
 		}
-		req, err := http.NewRequest(http.MethodPost, "http://"+addr+wire.InvokePath, body)
-		if err != nil {
-			return outcome{}, err
-		}
-		req.Header.Set(valiss.HeaderMessageToken, token)
-		return doHTTP(req)
-	case "grpc":
-		md := metadata.MD{}
-		md.Set(valiss.HeaderMessageToken, token)
-		return doGRPC(addr, md, payload)
-	default:
-		return outcome{}, fmt.Errorf("unknown transport %q", transport)
 	}
+
+	out, err := attempt(chainMode == "detached")
+	if err != nil {
+		return outcome{}, err
+	}
+	if chainMode == "negotiate" && out.ChainRequired {
+		// The server does not know our chain: retransmit once with the
+		// chain detached alongside the same still-valid token.
+		return attempt(true)
+	}
+	return out, nil
 }
 
 // doHTTP performs the one HTTP request and folds the response into the
-// contract outcome.
+// contract outcome, including the chain-negotiation signal header.
 func doHTTP(req *http.Request) (outcome, error) {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -250,14 +310,17 @@ func doHTTP(req *http.Request) (outcome, error) {
 	if err != nil {
 		return outcome{}, fmt.Errorf("read response: %w", err)
 	}
-	out := outcome{Status: resp.StatusCode}
+	out := outcome{
+		Status:        resp.StatusCode,
+		ChainRequired: resp.Header.Get(valiss.HeaderChain) == valiss.ChainRequired,
+	}
 	fill(&out, body)
 	return out, nil
 }
 
 // doGRPC performs the one gRPC call and folds the status into the contract
-// outcome. UNAVAILABLE means the server never answered: an infrastructure
-// error, not an outcome.
+// outcome, including the chain-negotiation signal trailer. UNAVAILABLE means
+// the server never answered: an infrastructure error, not an outcome.
 func doGRPC(addr string, md metadata.MD, payload []byte) (outcome, error) {
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -269,9 +332,12 @@ func doGRPC(addr string, md metadata.MD, payload []byte) (outcome, error) {
 	defer cancel()
 	ctx = metadata.NewOutgoingContext(ctx, md)
 
-	resp, err := interoppb.NewInteropClient(conn).Invoke(ctx, &interoppb.InvokeRequest{Payload: payload})
+	var trailer metadata.MD
+	resp, err := interoppb.NewInteropClient(conn).Invoke(ctx,
+		&interoppb.InvokeRequest{Payload: payload}, grpc.Trailer(&trailer))
+	chainRequired := slices.Contains(trailer.Get(valiss.HeaderChain), valiss.ChainRequired)
 	if err == nil {
-		out := outcome{Status: grpcCodeNames[codes.OK]}
+		out := outcome{Status: grpcCodeNames[codes.OK], ChainRequired: chainRequired}
 		fill(&out, []byte(resp.GetJson()))
 		return out, nil
 	}
@@ -279,7 +345,7 @@ func doGRPC(addr string, md metadata.MD, payload []byte) (outcome, error) {
 	if !ok || st.Code() == codes.Unavailable || st.Code() == codes.DeadlineExceeded {
 		return outcome{}, fmt.Errorf("call failed: %w", err)
 	}
-	out := outcome{Status: grpcCodeNames[st.Code()]}
+	out := outcome{Status: grpcCodeNames[st.Code()], ChainRequired: chainRequired}
 	fill(&out, []byte(st.Message()))
 	return out, nil
 }

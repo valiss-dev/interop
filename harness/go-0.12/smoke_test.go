@@ -20,9 +20,10 @@ import (
 
 // outcome mirrors the client's one-line report.
 type outcome struct {
-	Status   any              `json:"status"`
-	Reason   *string          `json:"reason"`
-	Identity *outcomeIdentity `json:"identity"`
+	Status        any              `json:"status"`
+	Reason        *string          `json:"reason"`
+	Identity      *outcomeIdentity `json:"identity"`
+	ChainRequired bool             `json:"chain_required"`
 }
 
 type outcomeIdentity struct {
@@ -229,21 +230,51 @@ func TestMessage(t *testing.T) {
 	for _, transport := range []string{"http", "grpc"} {
 		t.Run(transport, func(t *testing.T) {
 			addr := startServer(t, server, transport, "message")
-			call := func(audience string) outcome {
-				return runClient(t, client,
+			call := func(creds, audience string, extra ...string) outcome {
+				args := append([]string{
 					"--transport", transport, "--addr", addr,
-					"--creds", filepath.Join(fixture, "creds", "user.creds"),
+					"--creds", filepath.Join(fixture, "creds", creds),
 					"--mode", "message",
 					"--audience", audience,
 					"--payload", filepath.Join(fixture, "payloads", "hello.bin"),
-				)
+				}, extra...)
+				return runClient(t, client, args...)
 			}
 
 			t.Run("valid", func(t *testing.T) {
-				wantAccept(t, transport, call("interop://sink"), "acme", strp("alice"))
+				wantAccept(t, transport, call("user.creds", "interop://sink"), "acme", strp("alice"))
 			})
 			t.Run("wrong-audience", func(t *testing.T) {
-				wantReject(t, transport, call("interop://other"), "wrong_audience")
+				wantReject(t, transport, call("user.creds", "interop://other"), "wrong_audience")
+			})
+			t.Run("revoked-chain", func(t *testing.T) {
+				wantReject(t, transport, call("revoked.creds", "interop://sink"), "not_allowlisted")
+			})
+			t.Run("checksum-mismatch", func(t *testing.T) {
+				out := call("user.creds", "interop://sink",
+					"--tamper-payload", filepath.Join(fixture, "payloads", "tampered.bin"))
+				wantReject(t, transport, out, "checksum_mismatch")
+			})
+			t.Run("expired", func(t *testing.T) {
+				wantReject(t, transport, call("user.creds", "interop://sink", "--ttl", "-5m"), "expired")
+			})
+			t.Run("detached-chain", func(t *testing.T) {
+				out := call("user.creds", "interop://sink", "--chain", "detached")
+				wantAccept(t, transport, out, "acme", strp("alice"))
+			})
+			t.Run("bare-signals-negotiation", func(t *testing.T) {
+				out := call("user.creds", "interop://sink", "--chain", "none")
+				wantReject(t, transport, out, "no_chain")
+				if !out.ChainRequired {
+					t.Error("chain_required = false, want true")
+				}
+			})
+			t.Run("chain-negotiation", func(t *testing.T) {
+				out := call("user.creds", "interop://sink", "--chain", "negotiate")
+				wantAccept(t, transport, out, "acme", strp("alice"))
+				if out.ChainRequired {
+					t.Error("chain_required = true on the final response, want false")
+				}
 			})
 		})
 	}
