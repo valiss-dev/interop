@@ -6,7 +6,11 @@ and the file-backed allowlist, with a replay cache (signed requests must
 carry a nonce) and bearer user tokens accepted. In message mode it verifies
 a per-message proof of origin: audience pinned to the interop sink, checksum
 bound to the received payload, and the chain's account checked against the
-same allowlist.
+same allowlist. The chain arrives embedded in the token or in the detached
+request headers (valiss-chain-account-token / valiss-chain-user-token); a
+token with no chain anywhere is rejected no_chain and the response carries
+the chain-negotiation signal valiss-chain: required (response header on
+HTTP, trailer on gRPC).
 
 Accept answers HTTP 200 / gRPC OK with the contract's accept JSON; reject
 answers HTTP 401 / gRPC UNAUTHENTICATED with {"ok":false,"reason":<§7>}.
@@ -23,14 +27,16 @@ import threading
 from typing import Any, NoReturn
 from urllib.parse import urlsplit
 
-from valiss import MemoryReplayCache, Request, StaticAllowlist, Verifier, ValissError
+from valiss import MemoryReplayCache, Reason, Request, StaticAllowlist, Verifier, ValissError
 from valiss import message as vmessage
 from valiss import token as vtoken
 
 from . import wire
 
-# One request's verdict: (accept shape, None) or (None, reject shape).
-Outcome = tuple[dict[str, Any] | None, dict[str, Any] | None]
+# One request's verdict: (accept shape, None) or (None, reject shape), plus
+# whether the rejection must carry the valiss-chain: required negotiation
+# signal (response header on HTTP, trailer on gRPC).
+Outcome = tuple[dict[str, Any] | None, dict[str, Any] | None, bool]
 
 # Every ValissError raised on the verification paths carries a §7 reason; an
 # unmapped failure would be a harness bug best surfaced by a matrix mismatch,
@@ -57,26 +63,33 @@ class Service:
         try:
             identity = self.verifier.verify(request)
         except ValissError as exc:
-            return None, wire.reject(_reason(exc))
+            return None, wire.reject(_reason(exc)), False
         user = identity.user.name if identity.user is not None else None
-        return wire.accept(identity.account.name, user), None
+        return wire.accept(identity.account.name, user), None, False
 
-    def verify_message(self, token: str, payload: bytes) -> Outcome:
+    def verify_message(
+        self, token: str, payload: bytes, chain_account: str, chain_user: str
+    ) -> Outcome:
         """Verify a per-message proof over the payload as received, with the
         audience pinned to the interop sink and the chain's account held to
-        the same allowlist the signed mode enforces."""
+        the same allowlist the signed mode enforces. Detached chain material
+        from the request headers supplies the chain for a chainless token,
+        the way the library's own transports resolve it; a token with no
+        chain anywhere reports chain-required, telling the transport to
+        attach the valiss-chain: required negotiation signal."""
         if not token:
-            return None, wire.reject("missing")
+            return None, wire.reject("missing"), False
+        kwargs: dict[str, Any] = {"audience": wire.SINK_AUDIENCE, "payload": payload}
+        if chain_account and chain_user:
+            kwargs["chain"] = (chain_account, chain_user)
         try:
-            claims = vmessage.verify_message(
-                token, self.operator_pub, audience=wire.SINK_AUDIENCE, payload=payload
-            )
+            claims = vmessage.verify_message(token, self.operator_pub, **kwargs)
         except ValissError as exc:
-            return None, wire.reject(_reason(exc))
+            return None, wire.reject(_reason(exc)), exc.reason == Reason.NO_CHAIN
         assert claims.account is not None and claims.user is not None  # chain-verified
         if claims.account.id not in self.allowlist:
-            return None, wire.reject("not_allowlisted")
-        return wire.accept(claims.account.name, claims.user.name), None
+            return None, wire.reject("not_allowlisted"), False
+        return wire.accept(claims.account.name, claims.user.name), None, False
 
     def handle(self, headers: _Headers, payload: bytes, context: bytes) -> Outcome:
         """Dispatch one request's credential material by mode. ``headers`` is
@@ -93,7 +106,12 @@ class Service:
                     nonce=headers.get(vtoken.HEADER_NONCE),
                 )
             )
-        return self.verify_message(headers.get(vtoken.HEADER_MESSAGE_TOKEN), payload)
+        return self.verify_message(
+            headers.get(vtoken.HEADER_MESSAGE_TOKEN),
+            payload,
+            headers.get(vtoken.HEADER_CHAIN_ACCOUNT_TOKEN),
+            headers.get(vtoken.HEADER_CHAIN_USER_TOKEN),
+        )
 
 
 class _Headers:
@@ -131,9 +149,13 @@ def serve_http(service: Service, host: str, port: int, stop: threading.Event) ->
             context = wire.http_request_context(
                 self.command, self.headers.get("Host") or "", path, nonce
             )
-            accepted, rejected = service.handle(_Headers(self.headers.items()), body, context)
+            accepted, rejected, chain_required = service.handle(
+                _Headers(self.headers.items()), body, context
+            )
             raw = json.dumps(rejected if rejected is not None else accepted).encode()
             self.send_response(401 if rejected is not None else 200)
+            if rejected is not None and chain_required:
+                self.send_header(vtoken.HEADER_CHAIN, vtoken.CHAIN_REQUIRED)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(raw)))
             self.end_headers()
@@ -161,10 +183,18 @@ def serve_grpc(service: Service, host: str, port: int, stop: threading.Event) ->
             )
             nonce = headers.get(vtoken.HEADER_NONCE)
             signed_context = wire.grpc_request_context(wire.GRPC_FULL_METHOD, nonce)
-            accepted, rejected = service.handle(headers, request.payload, signed_context)
+            accepted, rejected, chain_required = service.handle(
+                headers, request.payload, signed_context
+            )
             if rejected is not None:
                 # Rejections travel as an UNAUTHENTICATED status whose message
-                # is the contract's reject JSON, exactly like go-0.12.
+                # is the contract's reject JSON, exactly like go-0.12; a
+                # no_chain rejection also carries the valiss-chain: required
+                # trailer.
+                if chain_required:
+                    context.set_trailing_metadata(
+                        ((vtoken.HEADER_CHAIN, vtoken.CHAIN_REQUIRED),)
+                    )
                 context.abort(grpc.StatusCode.UNAUTHENTICATED, json.dumps(rejected))
             return interop_pb2.InvokeResponse(json=json.dumps(accepted))
 

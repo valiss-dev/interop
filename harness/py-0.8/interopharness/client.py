@@ -11,16 +11,25 @@ bearer requests. Signing clients always attach a nonce: the --nonce value
 when fixed by the scenario, a fresh random one otherwise, because a
 replay-suppressing server (like this entry's) requires one on every signed
 request. In message mode the client mints a message token over the --payload
-bytes bound to --audience, with the creds' chain embedded.
+bytes bound to --audience with the --ttl lifetime (Go duration syntax;
+negative mints an already-expired token), sends the --tamper-payload bytes
+instead when given, and delivers the creds' chain per --chain: embedded in
+the token (default), detached in the chain headers, none at all, or
+negotiate — bare first, retransmitting once with the detached headers when
+the response carries the valiss-chain: required signal. The outcome line
+reports "chain_required": true when the final response carried that signal.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import urllib.error
 import urllib.request
+from collections.abc import Iterable
+from datetime import datetime, timedelta, timezone
 from typing import Any, NoReturn
 from urllib.parse import urlsplit
 
@@ -34,7 +43,9 @@ from . import wire
 
 # Outcome is the client's one-line report: the HTTP status int or the
 # canonical gRPC code string, the server's §7 reject code (null on accept),
-# and the accepted identity (null on reject).
+# the accepted identity (null on reject), and "chain_required": true when
+# the final response carried the chain-negotiation signal (omitted when
+# false, like the go entry's omitempty).
 Outcome = dict[str, Any]
 
 
@@ -43,10 +54,12 @@ def fatal(msg: str) -> NoReturn:
     raise SystemExit(1)
 
 
-def outcome(status: int | str, body: str) -> Outcome:
+def outcome(status: int | str, body: str, chain_required: bool = False) -> Outcome:
     """Fold a contract response body (accept or reject shape) into the
     outcome; a body in neither shape leaves reason and identity null."""
     out: Outcome = {"status": status, "reason": None, "identity": None}
+    if chain_required:
+        out["chain_required"] = True
     try:
         parsed = json.loads(body)
     except (json.JSONDecodeError, ValueError):
@@ -60,6 +73,39 @@ def outcome(status: int | str, body: str) -> Outcome:
     if isinstance(reason, str) and reason:
         out["reason"] = reason
     return out
+
+
+# One Go-duration term: a decimal number and its unit, e.g. "5m" or "1.5h"
+# (time.ParseDuration syntax; a duration is a signed sequence of terms).
+_DURATION_TERM = re.compile(r"(\d+(?:\.\d*)?|\.\d+)(ns|us|µs|μs|ms|s|m|h)")
+
+_DURATION_UNITS = {
+    "ns": 1e-9, "us": 1e-6, "µs": 1e-6, "μs": 1e-6,
+    "ms": 1e-3, "s": 1.0, "m": 60.0, "h": 3600.0,
+}
+
+
+def parse_go_duration(text: str) -> timedelta:
+    """Parse a Go time.ParseDuration string ("30s", "-5m", "1h30m"): an
+    optional sign, then one or more number+unit terms; a bare "0" is the
+    zero duration. Raises ValueError on anything else."""
+    rest = text
+    sign = 1
+    if rest[:1] in ("+", "-"):
+        sign = -1 if rest[0] == "-" else 1
+        rest = rest[1:]
+    if rest == "0":
+        return timedelta(0)
+    total = 0.0
+    pos = 0
+    for m in _DURATION_TERM.finditer(rest):
+        if m.start() != pos:
+            break
+        total += float(m.group(1)) * _DURATION_UNITS[m.group(2)]
+        pos = m.end()
+    if pos == 0 or pos != len(rest):
+        raise ValueError(f"invalid duration {text!r}")
+    return timedelta(seconds=sign * total)
 
 
 def signed(transport: str, addr: str, c: vcreds.Creds, nonce: str) -> Outcome:
@@ -106,9 +152,25 @@ def signed(transport: str, addr: str, c: vcreds.Creds, nonce: str) -> Outcome:
     fatal(f"unknown transport {transport!r}")
 
 
-def message(transport: str, addr: str, c: vcreds.Creds, audience: str, payload_path: str) -> Outcome:
+def message(
+    transport: str,
+    addr: str,
+    c: vcreds.Creds,
+    audience: str,
+    payload_path: str,
+    tamper_path: str,
+    ttl_flag: str,
+    chain_mode: str,
+) -> Outcome:
     """Mint a per-message proof over the payload bytes bound to the audience,
-    with the creds' chain embedded, and send payload plus token."""
+    and send the payload (or the tamper bytes) plus token, with the chain
+    delivered per ``chain_mode``: embedded in the token, detached in the
+    chain headers, none at all, or negotiated — bare first, retransmitted
+    once with the detached headers on the valiss-chain: required signal."""
+    try:
+        ttl = parse_go_duration(ttl_flag)
+    except ValueError as exc:
+        fatal(f"parse ttl: {exc}")
     if not c.account_token or not c.user_token or not c.seed:
         fatal("message mode requires bundle creds: account token, user token, and seed")
     try:
@@ -129,32 +191,56 @@ def message(transport: str, addr: str, c: vcreds.Creds, audience: str, payload_p
     if account.epoch != user_claims.epoch:
         fatal(f"creds chain epochs disagree: account {account.epoch}, user {user_claims.epoch}")
 
-    payload = b""
-    if payload_path:
-        try:
-            with open(payload_path, "rb") as f:
-                payload = f.read()
-        except OSError as exc:
-            fatal(f"read payload: {exc}")
+    payload = read_bytes(payload_path) if payload_path else b""
+    # The checksum is minted over --payload; the tamper bytes, when given,
+    # are what actually travels.
+    send = read_bytes(tamper_path) if tamper_path else payload
 
+    mint_kwargs: dict[str, Any] = {
+        "audience": audience,
+        "checksum": vmessage.checksum(payload),
+        "epoch": user_claims.epoch,
+    }
+    if chain_mode == "embedded":
+        mint_kwargs["chain"] = (c.account_token, c.user_token)
+    # issue_message insists on a positive ttl, so an already-expired token
+    # (the contract's negative --ttl) is minted via an expiry in the past.
+    if ttl > timedelta(0):
+        mint_kwargs["ttl"] = ttl
+    else:
+        mint_kwargs["expiry"] = datetime.now(timezone.utc) + ttl
     try:
-        token = vmessage.issue_message(
-            user,
-            audience=audience,
-            checksum=vmessage.checksum(payload),
-            chain=(c.account_token, c.user_token),
-            epoch=user_claims.epoch,
-            ttl=vmessage.DEFAULT_MESSAGE_TTL,
-        )
+        token = vmessage.issue_message(user, **mint_kwargs)
     except ValissError as exc:
         fatal(f"issue message token: {exc}")
 
-    headers = [(vtoken.HEADER_MESSAGE_TOKEN, token)]
-    if transport == "http":
-        return do_http("http://" + addr + wire.INVOKE_PATH, headers, payload or None)
-    if transport == "grpc":
-        return do_grpc(addr, headers, payload)
-    fatal(f"unknown transport {transport!r}")
+    def attempt(detached: bool) -> Outcome:
+        """One call; ``detached`` says whether the chain rides along in the
+        detached headers."""
+        headers = [(vtoken.HEADER_MESSAGE_TOKEN, token)]
+        if detached:
+            headers.append((vtoken.HEADER_CHAIN_ACCOUNT_TOKEN, c.account_token))
+            headers.append((vtoken.HEADER_CHAIN_USER_TOKEN, c.user_token))
+        if transport == "http":
+            return do_http("http://" + addr + wire.INVOKE_PATH, headers, send or None)
+        if transport == "grpc":
+            return do_grpc(addr, headers, send)
+        fatal(f"unknown transport {transport!r}")
+
+    out = attempt(chain_mode == "detached")
+    if chain_mode == "negotiate" and out.get("chain_required"):
+        # The server does not know our chain: retransmit once with the chain
+        # detached alongside the same still-valid token.
+        return attempt(True)
+    return out
+
+
+def read_bytes(path: str) -> bytes:
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except OSError as exc:
+        fatal(f"read payload: {exc}")
 
 
 def sign(signer: vnkeys.KeyPair, context: bytes) -> tuple[str, str]:
@@ -166,32 +252,44 @@ def sign(signer: vnkeys.KeyPair, context: bytes) -> tuple[str, str]:
 
 def do_http(url: str, headers: list[tuple[str, str]], body: bytes | None) -> Outcome:
     """Perform the one HTTP request and fold the response into the contract
-    outcome."""
+    outcome, including the chain-negotiation signal header."""
     request = urllib.request.Request(url, data=body, method="POST")
     for key, value in headers:
         request.add_header(key, value)
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
-            return outcome(response.status, response.read().decode("utf-8", "replace"))
+            chain = response.headers.get(vtoken.HEADER_CHAIN) == vtoken.CHAIN_REQUIRED
+            return outcome(response.status, response.read().decode("utf-8", "replace"), chain)
     except urllib.error.HTTPError as err:
         # A rejection is an outcome, not a client error.
         with err:
-            return outcome(err.code, err.read().decode("utf-8", "replace"))
+            chain = err.headers.get(vtoken.HEADER_CHAIN) == vtoken.CHAIN_REQUIRED
+            return outcome(err.code, err.read().decode("utf-8", "replace"), chain)
     except OSError as exc:
         fatal(f"request failed: {exc}")
 
 
+def chain_signal(trailing: Iterable[tuple[str, str | bytes]] | None) -> bool:
+    """Whether gRPC trailing metadata carries the valiss-chain: required
+    negotiation signal."""
+    for key, value in trailing or ():
+        if key == vtoken.HEADER_CHAIN and value == vtoken.CHAIN_REQUIRED:
+            return True
+    return False
+
+
 def do_grpc(addr: str, metadata: list[tuple[str, str]], payload: bytes) -> Outcome:
     """Perform the one gRPC call and fold the status into the contract
-    outcome. UNAVAILABLE means the server never answered: an infrastructure
-    error, not an outcome."""
+    outcome, including the chain-negotiation signal trailer. UNAVAILABLE
+    means the server never answered: an infrastructure error, not an
+    outcome."""
     import grpc
     from interoppb import interop_pb2, interop_pb2_grpc
 
     with grpc.insecure_channel(addr) as channel:
         stub = interop_pb2_grpc.InteropStub(channel)
         try:
-            response = stub.Invoke(
+            response, call = stub.Invoke.with_call(
                 interop_pb2.InvokeRequest(payload=payload), metadata=metadata, timeout=30
             )
         except grpc.RpcError as err:
@@ -199,9 +297,10 @@ def do_grpc(addr: str, metadata: list[tuple[str, str]], payload: bytes) -> Outco
             if code in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED):
                 fatal(f"call failed: {err}")
             # StatusCode names are the canonical wire spellings, which the
-            # contract's "grpc code string" means.
-            return outcome(code.name, err.details() or "")
-        return outcome(grpc.StatusCode.OK.name, response.json)
+            # contract's "grpc code string" means. A failed unary call is
+            # also a grpc.Call, so its trailing metadata is readable.
+            return outcome(code.name, err.details() or "", chain_signal(err.trailing_metadata()))
+        return outcome(grpc.StatusCode.OK.name, response.json, chain_signal(call.trailing_metadata()))
 
 
 def main() -> None:
@@ -216,7 +315,24 @@ def main() -> None:
                         help="request mode: signed or message")
     parser.add_argument("--audience", default="", help="message-mode audience binding")
     parser.add_argument("--payload", default="", help="message-mode payload file")
-    args = parser.parse_args()
+    parser.add_argument("--tamper-payload", default="", dest="tamper_payload",
+                        help="message mode: send this file's bytes instead of the "
+                             "checksummed --payload ones")
+    parser.add_argument("--ttl", default="30s",
+                        help="message-token lifetime, Go duration syntax; negative mints "
+                             "an already-expired token")
+    parser.add_argument("--chain", choices=["embedded", "detached", "none", "negotiate"],
+                        default="embedded",
+                        help="message-mode chain delivery: embedded, detached, none, "
+                             "or negotiate")
+    # argparse reads a leading dash as an option marker, so a negative --ttl
+    # value ("-5m") must ride in the same token as its flag.
+    argv = sys.argv[1:]
+    for i, arg in enumerate(argv[:-1]):
+        if arg == "--ttl" and argv[i + 1].startswith("-"):
+            argv[i : i + 2] = ["--ttl=" + argv[i + 1]]
+            break
+    args = parser.parse_args(argv)
 
     try:
         c = vcreds.load(args.creds)
@@ -226,7 +342,8 @@ def main() -> None:
     if args.mode == "signed":
         out = signed(args.transport, args.addr, c, args.nonce)
     else:
-        out = message(args.transport, args.addr, c, args.audience, args.payload)
+        out = message(args.transport, args.addr, c, args.audience, args.payload,
+                      args.tamper_payload, args.ttl, args.chain)
     print(json.dumps(out), flush=True)
 
 

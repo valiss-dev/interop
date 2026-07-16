@@ -4,7 +4,8 @@
 #   /usr/local/bin/py-0.8-server --transport ... --addr ... \
 #       --operator ... --allowlist ... [--mode ...]
 #   /usr/local/bin/py-0.8-client --transport ... --addr ... --creds ... \
-#       [--nonce ...] [--mode ...] [--audience ...] [--payload ...]
+#       [--nonce ...] [--mode ...] [--audience ...] [--payload ...] \
+#       [--tamper-payload ...] [--ttl ...] [--chain ...]
 #
 # The valiss dependency is the frozen v0.8.0 git tag — never a local
 # checkout — so the image pins the exact library the entry declares.
