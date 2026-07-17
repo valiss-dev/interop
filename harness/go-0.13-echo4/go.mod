@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	github.com/labstack/echo/v4 v4.15.4
-	valiss.dev/valiss v0.13.0
+	valiss.dev/valiss v0.13.1
 )
 
 require (
