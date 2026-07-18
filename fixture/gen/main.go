@@ -5,6 +5,14 @@
 // committed output is the authority, and byte-reproducibility across runs is
 // not required (tokens embed a fresh iat and a content-hash jti).
 //
+// The pin in go.mod tracks the current valiss Go reference: fixture/gen is
+// bumped to each new library minor as it releases, so the committed fixture is
+// always minted by the latest reference. Regeneration embeds a fresh iat and a
+// content-hash jti into every token, so allowlist.txt and creds/* necessarily
+// differ on every run; operator.pub (derived from a fixed seed) and the
+// payloads are deterministic. A structural difference beyond the fresh iat/jti
+// signals a wire-format change and is a review signal, not noise.
+//
 // Usage: go run . [OUTPUT_DIR]   (default: the fixture directory, resolved
 // relative to this source file)
 package main
